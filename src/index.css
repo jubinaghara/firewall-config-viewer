@@ -1,0 +1,130 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-white text-gray-900;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    margin: 1cm;
+    size: A4;
+  }
+
+  body {
+    @apply bg-white;
+    font-size: 11pt;
+    line-height: 1.4;
+  }
+
+  /* Hide navigation, buttons, and interactive elements */
+  header,
+  button,
+  .no-print,
+  input,
+  select,
+  nav {
+    display: none !important;
+  }
+
+  /* Ensure full width for report */
+  .report-container {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Compact spacing for print */
+  .report-container > div {
+    margin-bottom: 0.75cm !important;
+  }
+
+  /* Page breaks */
+  .page-break {
+    page-break-after: always;
+  }
+
+  /* Avoid breaking inside rules */
+  .rule-section {
+    page-break-inside: avoid;
+    margin-bottom: 0.5cm !important;
+  }
+
+  /* Compact headers */
+  h1 {
+    font-size: 20pt !important;
+    margin-bottom: 0.3cm !important;
+  }
+
+  h2 {
+    font-size: 14pt !important;
+    margin-bottom: 0.3cm !important;
+  }
+
+  h3 {
+    font-size: 12pt !important;
+    margin-bottom: 0.2cm !important;
+  }
+
+  h4 {
+    font-size: 10pt !important;
+    margin-bottom: 0.2cm !important;
+  }
+
+  /* Compact spacing */
+  .space-y-1 > * + * {
+    margin-top: 2pt !important;
+  }
+
+  .space-y-4 > * + * {
+    margin-top: 6pt !important;
+  }
+
+  /* Print colors - preserve colors */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Remove shadows and borders for cleaner print */
+  .bg-white {
+    box-shadow: none !important;
+  }
+
+  .border {
+    border-color: #d1d5db !important;
+  }
+
+  /* Compact padding */
+  .p-3, .p-4 {
+    padding: 8pt !important;
+  }
+
+  .py-1 {
+    padding-top: 2pt !important;
+    padding-bottom: 2pt !important;
+  }
+
+  /* Better field layout for print */
+  .flex {
+    gap: 8pt !important;
+  }
+}

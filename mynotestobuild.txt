@@ -1,0 +1,30 @@
+/S /Q "%LOCALAPPDATA%\electron-builder\Cache\nsis"
+rmdir /S /Q "%LOCALAPPDATA%\electron-builder"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\electron-builder\Cache" -ErrorAction SilentlyContinue
+
+# 1. Clean everything
+rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache"
+rmdir /s /q dist
+rmdir /s /q release
+
+
+npm run sbom:cyclonedx
+
+
+npm run electron:build:win:installer
+
+
+complete clean up
+
+# Stop any Node processes
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Delete the entire electron-builder cache
+Remove-Item -Path "$env:LOCALAPPDATA\electron-builder\Cache" -Recurse -Force -ErrorAction SilentlyContinue
+
+# Navigate to your project
+cd "C:\Users\jubin.aghara\OneDrive - Sophos Ltd\Work\AUTOMATION PYTHON\Examples\Humanreadable config\firewall-config-viewer"
+
+# Clean build folders
+Remove-Item -Path "dist" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "release" -Recurse -Force -ErrorAction SilentlyContinue

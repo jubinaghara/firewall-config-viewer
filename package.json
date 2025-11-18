@@ -1,0 +1,150 @@
+{
+  "name": "firewall-config-viewer",
+  "private": true,
+  "version": "1.0.0",
+  "description": "A beautiful, lightweight application to parse and visualize firewall configuration files (Entities.xml) in a human-readable format.",
+  "author": "Firewall Config Viewer Team",
+  "type": "module",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron": "electron .",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:win": "npm run build && electron-builder --win --x64",
+    "electron:build:win:portable": "npm run build && electron-builder --win portable --x64",
+    "electron:build:win:dir": "npm run build && electron-builder --win dir --x64",
+    "electron:build:win:installer": "npm run build && electron-builder --win nsis --x64",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:mac:arm64": "npm run build && electron-builder --mac --arm64",
+    "electron:build:mac:universal": "npm run build && electron-builder --mac --universal",
+    "electron:build:all": "npm run build && electron-builder --win --mac",
+    "sbom": "cyclonedx-npm --output-file sbom.json",
+    "sbom:cyclonedx": "cyclonedx-npm --output-file sbom-cyclonedx.json",
+    "sbom:spdx": "cyclonedx-npm --output-format spdxjson --output-file sbom-spdx.json",
+    "sbom:all": "npm run sbom:cyclonedx && npm run sbom:spdx"
+  },
+  "dependencies": {
+    "lucide-react": "^0.294.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.43",
+    "@types/react-dom": "^18.2.17",
+    "@vitejs/plugin-react": "^4.2.1",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^8.2.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.32",
+    "tailwindcss": "^3.3.6",
+    "vite": "^5.4.21",
+    "wait-on": "^7.2.0",
+    "@cyclonedx/cyclonedx-npm": "^1.15.0"
+  },
+  "build": {
+    "appId": "com.firewallconfigviewer.app",
+    "productName": "Firewall Config Viewer",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "forceCodeSigning": false,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "**/*.{node,dll,dylib,so}"
+    ],
+    "extraFiles": [
+      {
+        "from": "public",
+        "to": "public",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        },
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/sophos-favicon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "sign": null,
+      "requestedExecutionLevel": "asInvoker",
+      "forceCodeSigning": false,
+      "certificateFile": null,
+      "certificatePassword": null,
+      "signingHashAlgorithms": null,
+      "publisherName": null,
+      "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
+      "signDlls": false
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "public/sophos-favicon.ico",
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "public/sophos-favicon.ico",
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "installerIcon": "public/sophos-favicon.ico",
+      "uninstallerIcon": "public/sophos-favicon.ico",
+      "installerHeaderIcon": "public/sophos-favicon.ico",
+      "shortcutIcon": "public/sophos-favicon.ico",
+      "shortcutName": "${productName}",
+      "deleteAppDataOnUninstall": false,
+      "license": "build/license.txt",
+      "perMachine": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}",
+      "requestExecutionLevel": "user",
+      "unpackDirName": "${productName}"
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "icon": "public/sophos-favicon.ico"
+    }
+  }
+}

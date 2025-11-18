@@ -1,0 +1,11 @@
+LICENSE AGREEMENT
+
+Use of this software is subject to the Sophos End User Terms of Use:
+https://www.sophos.com/en-us/legal/sophos-end-user-terms-of-use
+
+You must accept the End User Terms of Use to continue, so please read it carefully.
+
+You also acknowledge that Sophos processes personal data in accordance with the Sophos Privacy Notice:
+https://www.sophos.com/en-us/legal/sophos-group-privacy-notice
+
+By clicking "I Agree" below, you accept these terms and conditions.
