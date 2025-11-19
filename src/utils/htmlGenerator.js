@@ -376,6 +376,98 @@ function generateEntityTable(title, icon, items, primaryKeyLabel = null, primary
   `
 }
 
+// Generate VPN IPSec Connection table HTML with Local/Remote columns
+function generateVPNIPSecConnectionTable(items) {
+  if (!items || items.length === 0) return ''
+  
+  const formatRemoteNetwork = (fields) => {
+    const remoteNetwork = fields?.RemoteNetwork
+    if (!remoteNetwork) return 'N/A'
+    if (typeof remoteNetwork === 'string') return remoteNetwork
+    if (typeof remoteNetwork === 'object' && remoteNetwork.Network) {
+      if (Array.isArray(remoteNetwork.Network)) {
+        return remoteNetwork.Network.join(', ')
+      }
+      return remoteNetwork.Network
+    }
+    return 'N/A'
+  }
+  
+  let rows = ''
+  items.forEach((it, idx) => {
+    const fields = it.fields || {}
+    const name = escapeHtml(it.name || fields.Name || '')
+    const connectionType = escapeHtml(fields.ConnectionType || 'N/A')
+    const status = fields.Status || 'N/A'
+    const policy = escapeHtml(fields.Policy || 'N/A')
+    
+    const localID = fields.LocalID || ''
+    const localIDType = fields.LocalIDType || ''
+    const localSubnet = fields.LocalSubnet || ''
+    const localWANPort = fields.LocalWANPort || fields.AliasLocalWANPort || ''
+    const remoteID = fields.RemoteID || ''
+    const remoteIDType = fields.RemoteIDType || ''
+    const remoteHost = fields.RemoteHost || ''
+    const remoteNetwork = formatRemoteNetwork(fields)
+    
+    const localInfo = [
+      localID && `${localIDType}: ${localID}`,
+      localSubnet && localSubnet !== 'Any' && `Subnet: ${localSubnet}`,
+      localWANPort && `Port: ${localWANPort}`
+    ].filter(Boolean).join(' | ') || 'N/A'
+    
+    const remoteInfo = [
+      remoteID && `${remoteIDType}: ${remoteID}`,
+      remoteHost && remoteHost !== '*' && `Host: ${remoteHost}`,
+      remoteNetwork && remoteNetwork !== 'Any' && `Network: ${remoteNetwork}`
+    ].filter(Boolean).join(' | ') || 'N/A'
+    
+    const statusBadge = status === 'Active' 
+      ? '<span style="display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background-color: #d1fae5; color: #065f46;">Active</span>'
+      : '<span style="display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background-color: #f3f4f6; color: #4b5563;">' + escapeHtml(status) + '</span>'
+    
+    rows += `
+      <tr style="border-bottom: 1px solid #e5e7eb;">
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #4b5563; font-weight: 500;">${idx + 1}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 500; color: #111827; word-break: break-word; overflow-wrap: anywhere; max-width: 200px;">${name}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #374151; word-break: break-word; overflow-wrap: anywhere; max-width: 150px;">${connectionType}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem;">${statusBadge}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #1f2937; word-break: break-word; overflow-wrap: anywhere; max-width: 250px;">${escapeHtml(localInfo)}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #1f2937; word-break: break-word; overflow-wrap: anywhere; max-width: 250px;">${escapeHtml(remoteInfo)}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #374151; word-break: break-word; overflow-wrap: anywhere; max-width: 200px;">${policy}</td>
+      </tr>
+    `
+  })
+  
+  return `
+    <div style="margin-bottom: 1.5rem;">
+      <h3 style="font-size: 0.875rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; padding-bottom: 0.375rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.5rem;">
+        <span class="material-symbols-outlined" style="font-size: 1rem; color: #6366f1;">vpn_key</span>
+        <span>VPN IPSec Connections</span>
+        <span style="color: #6b7280; font-weight: normal;">(${items.length})</span>
+      </h3>
+      <div style="overflow-x: auto; border: 1px solid #d1d5db; border-radius: 0.5rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead style="background-color: #f3f4f6;">
+            <tr>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; width: 3rem;">#</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Name</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Connection Type</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Status</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Local</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Remote</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Policy</th>
+            </tr>
+          </thead>
+          <tbody style="background-color: #ffffff;">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
 // Generate collapsible section HTML
 function generateCollapsibleSection(sectionId, title, content, isExpanded = true) {
   return `
@@ -568,7 +660,23 @@ function generateFirewallRule(rule, index, isExpanded = false) {
             </h4>
             <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
               <tbody>
-                ${flat.identity ? renderField('Identity/Groups', flat.identity) : ''}
+                ${(() => {
+                  // Extract Identity - try flattened version first, then fallback to policy
+                  let identityValue = flat.identity;
+                  if (!identityValue && policy.Identity) {
+                    const identity = policy.Identity;
+                    if (Array.isArray(identity)) {
+                      identityValue = identity.join(', ');
+                    } else if (identity.Member) {
+                      identityValue = Array.isArray(identity.Member) 
+                        ? identity.Member.join(', ') 
+                        : identity.Member;
+                    } else if (typeof identity === 'string') {
+                      identityValue = identity;
+                    }
+                  }
+                  return identityValue ? renderField('Identity/Groups', identityValue) : '';
+                })()}
                 ${policy.MatchIdentity ? renderField('Match Identity', policy.MatchIdentity) : ''}
                 ${policy.ShowCaptivePortal ? renderField('Show Captive Portal', policy.ShowCaptivePortal) : ''}
                 ${policy.DataAccounting ? renderField('Data Accounting', policy.DataAccounting) : ''}
@@ -774,7 +882,10 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
               'IPSPolicy', 'IntrusionPrevention', 'VirusScanning', 'WebFilter'].includes(tag)) {
           const icon = getEntityIcon(tag)
           const iconColor = getEntityIconColor(tag)
-          sectionsHtml += `<div id="additional-${tag}" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection(`additional-${tag}`, `<span class="material-symbols-outlined" style="color: ${iconColor};">${icon}</span> ${escapeHtml(tag)} (${items.length})`, generateEntityTable(tag, icon, items), true)}</div>`
+          const tableHtml = tag === 'VPNIPSecConnection' 
+            ? generateVPNIPSecConnectionTable(items)
+            : generateEntityTable(tag, icon, items)
+          sectionsHtml += `<div id="additional-${tag}" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection(`additional-${tag}`, `<span class="material-symbols-outlined" style="color: ${iconColor};">${icon}</span> ${escapeHtml(tag)} (${items.length})`, tableHtml, true)}</div>`
         }
       }
     })
@@ -939,6 +1050,12 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     })
   }
 
+  // Apply sorting to sections (default sort for HTML export)
+  const sortedSections = [...allSections].sort((a, b) => {
+    // Default sort: keep original order
+    return 0
+  })
+  
   const sidebarHtml = `
     <div style="width: 14rem; min-width: 14rem; background-color: #f9fafb; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; height: 100vh; flex-shrink: 0;">
       <div style="padding: 0.5rem; border-bottom: 1px solid #e5e7eb;">
@@ -952,13 +1069,26 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
           onfocus="this.style.boxShadow='0 0 0 1px #005BC8'"
           onblur="this.style.boxShadow=''"
         />
+        <select
+          id="section-sort"
+          onchange="sortSections()"
+          style="width: 100%; padding: 0.375rem 0.375rem; font-size: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.25rem; margin-bottom: 0.375rem; outline: none; font-family: Arial, Helvetica, sans-serif;"
+          onfocus="this.style.boxShadow='0 0 0 1px #005BC8'"
+          onblur="this.style.boxShadow=''"
+        >
+          <option value="default">Sort: Default</option>
+          <option value="name-asc">Sort: Name (A-Z)</option>
+          <option value="name-desc">Sort: Name (Z-A)</option>
+          <option value="count-desc">Sort: Count (High to Low)</option>
+          <option value="count-asc">Sort: Count (Low to High)</option>
+        </select>
         <div style="display: flex; gap: 0.375rem;">
           <button onclick="selectAllSections()" style="flex: 1; padding: 0.25rem 0.375rem; font-size: 0.75rem; font-weight: 500; color: white; background-color: #005BC8; border: none; border-radius: 0.25rem; cursor: pointer; font-family: Arial, Helvetica, sans-serif;" onmouseover="this.style.backgroundColor='#004A9F'" onmouseout="this.style.backgroundColor='#005BC8'">Select All</button>
           <button onclick="deselectAllSections()" style="flex: 1; padding: 0.25rem 0.375rem; font-size: 0.75rem; font-weight: 500; color: #374151; background-color: white; border: 1px solid #d1d5db; border-radius: 0.25rem; cursor: pointer; font-family: Arial, Helvetica, sans-serif;">Deselect All</button>
         </div>
       </div>
       <div id="sidebar-sections" style="flex: 1; overflow-y: auto; padding: 0.25rem;">
-        ${allSections.map(section => {
+        ${sortedSections.map(section => {
           // Handle certificates group visibility
           let isVisible = false
           if (section.key === 'certificates') {
@@ -971,9 +1101,9 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
           }
           
           return `
-            <label data-section-key="${section.key}" class="sidebar-section-item" style="display: flex; align-items: center; gap: 0.375rem; cursor: pointer; padding: 0.375rem; border-radius: 0.25rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">
+            <label data-section-key="${section.key}" data-section-name="${escapeHtml(section.name)}" data-section-count="${section.count || 0}" class="sidebar-section-item" style="display: flex; align-items: center; gap: 0.375rem; cursor: pointer; padding: 0.375rem; border-radius: 0.25rem;" onmouseover="this.style.backgroundColor='#f3f4f6'" onmouseout="this.style.backgroundColor='transparent'">
               <input type="checkbox" data-section-key="${section.key}" ${isVisible ? 'checked' : ''} onchange="${section.key === 'certificates' ? 'toggleCertificatesGroup()' : `toggleSectionVisibility('${section.key}')`}" style="width: 1rem; height: 1rem; accent-color: #005BC8; cursor: pointer; flex-shrink: 0;" onclick="event.stopPropagation()" />
-              <span class="material-symbols-outlined" style="font-size: 0.875rem; color: ${getEntityIconColor(section.key)}; flex-shrink: 0;">${section.icon}</span>
+              <span class="material-symbols-outlined" style="font-size: 0.875rem; color: #4b5563; flex-shrink: 0;">${section.icon}</span>
               <span style="font-size: 0.75rem; color: #374151; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(section.name)}</span>
               ${section.count !== null ? `<span style="font-size: 0.75rem; color: #6b7280; font-weight: 500; margin-left: auto; flex-shrink: 0;">(${section.count})</span>` : ''}
             </label>
@@ -1221,6 +1351,45 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
       items.forEach(item => {
         const text = item.textContent.toLowerCase()
         item.style.display = text.includes(searchTerm) ? 'flex' : 'none'
+      })
+    }
+    
+    function sortSections() {
+      const sortSelect = document.getElementById('section-sort')
+      if (!sortSelect) return
+      
+      const sortOption = sortSelect.value
+      const container = document.getElementById('sidebar-sections')
+      if (!container) return
+      
+      const items = Array.from(container.querySelectorAll('.sidebar-section-item'))
+      
+      // Extract section data for sorting using data attributes
+      const sectionsData = items.map(item => {
+        const name = item.getAttribute('data-section-name') || ''
+        const count = parseInt(item.getAttribute('data-section-count') || '0') || 0
+        return { item, name, count }
+      })
+      
+      // Sort based on option
+      sectionsData.sort((a, b) => {
+        switch (sortOption) {
+          case 'name-asc':
+            return a.name.localeCompare(b.name)
+          case 'name-desc':
+            return b.name.localeCompare(a.name)
+          case 'count-desc':
+            return b.count - a.count
+          case 'count-asc':
+            return a.count - b.count
+          default:
+            return 0 // Keep original order
+        }
+      })
+      
+      // Re-append items in sorted order
+      sectionsData.forEach(({ item }) => {
+        container.appendChild(item)
       })
     }
     

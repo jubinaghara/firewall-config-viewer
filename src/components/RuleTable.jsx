@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Shield, Clock, User, Network, CheckCircle2, XCircle } from 'lucide-react'
+import { ChevronDown, ChevronRight, Zap, Clock, User, Network, CheckCircle2, XCircle } from 'lucide-react'
 import { flattenFirewallRule } from '../utils/xmlParser'
 import RuleDetails from './RuleDetails'
 import theme from '../theme'
@@ -30,7 +30,7 @@ export default function RuleTable({ rules }) {
       case 'Network':
         return <Network className="w-4 h-4" style={{ color: theme.colors.policy.network }} />
       default:
-        return <Shield className="w-4 h-4" style={{ color: theme.colors.policy.default }} />
+        return <Zap className="w-4 h-4" style={{ color: theme.colors.policy.default }} />
     }
   }
 
@@ -54,7 +54,7 @@ export default function RuleTable({ rules }) {
   if (rules.length === 0) {
     return (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
-        <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+        <Zap className="w-12 h-12 text-gray-400 mx-auto mb-4" />
         <p className="text-gray-600">No firewall rules found matching your filters.</p>
       </div>
     )

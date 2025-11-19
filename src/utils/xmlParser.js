@@ -240,6 +240,25 @@ export function parseEntitiesXML(xmlString) {
     entitiesByTag['LAG'] = lags
   }
 
+  // Special handling: Extract VPNIPSecConnection with multiple Configuration children
+  const vpnConnections = []
+  Array.from(xmlDoc.querySelectorAll('VPNIPSecConnection')).forEach((vpnEl, vpnIdx) => {
+    const transactionId = vpnEl.getAttribute('transactionid') || ''
+    // Extract each Configuration as a separate connection
+    const configurations = Array.from(vpnEl.querySelectorAll('Configuration'))
+    configurations.forEach((configEl, configIdx) => {
+      const entity = baseParseEntity(configEl, vpnConnections.length, 'VPNIPSecConnection')
+      entity.transactionId = transactionId // Use parent transaction ID
+      entity.configIndex = configIdx
+      vpnConnections.push(entity)
+    })
+  })
+
+  // Add VPN connections to entitiesByTag
+  if (vpnConnections.length > 0) {
+    entitiesByTag['VPNIPSecConnection'] = vpnConnections
+  }
+
   return {
     metadata: {
       apiVersion,
@@ -595,9 +614,19 @@ export function flattenFirewallRule(rule) {
   // Add identity if it's a UserPolicy
   if (rule.userPolicy && rule.userPolicy.Identity) {
     const identity = rule.userPolicy.Identity;
-    flattened.identity = Array.isArray(identity.Member) 
-      ? identity.Member.join(', ')
-      : (identity.Member || '');
+    // Handle both cases: Identity as direct array or Identity.Member structure
+    if (Array.isArray(identity)) {
+      // Identity is parsed as direct array: ['Open Group', 'Clientless Open Group', ...]
+      flattened.identity = identity.join(', ');
+    } else if (identity.Member) {
+      // Identity is parsed as object with Member property
+      flattened.identity = Array.isArray(identity.Member) 
+        ? identity.Member.join(', ')
+        : (identity.Member || '');
+    } else if (typeof identity === 'string') {
+      // Identity is a single string value
+      flattened.identity = identity;
+    }
   }
 
   return flattened;

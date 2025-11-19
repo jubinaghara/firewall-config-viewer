@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { flattenFirewallRule, formatTagName } from '../utils/xmlParser'
-import { Shield, CheckCircle2, XCircle, ChevronRight, ChevronDown } from 'lucide-react'
+import { Zap, CheckCircle2, XCircle, ChevronRight, ChevronDown } from 'lucide-react'
 
 // Helper to normalize exclusions into an array of strings (handles many shapes)
 function getExclusionArray(value, key) {
@@ -35,6 +35,8 @@ function getExclusionArray(value, key) {
 export default function ReportView({ data, filteredRules, sectionVisibility = {}, onToggleSection, onSelectAll, onDeselectAll }) {
   // State for search in sidebar
   const [sectionSearch, setSectionSearch] = useState('')
+  // State for sort option
+  const [sortOption, setSortOption] = useState('default') // 'default', 'name-asc', 'name-desc', 'count-desc', 'count-asc'
 
   // State for main content sections (all collapsed by default)
   const [expandedMainSections, setExpandedMainSections] = useState({})
@@ -499,6 +501,113 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       </div>
     )
   }
+
+  const VPNIPSecConnectionTable = ({ items }) => {
+    if (!items || items.length === 0) return null
+
+    const formatRemoteNetwork = (fields) => {
+      const remoteNetwork = fields?.RemoteNetwork
+      if (!remoteNetwork) return 'N/A'
+      if (typeof remoteNetwork === 'string') return remoteNetwork
+      if (typeof remoteNetwork === 'object' && remoteNetwork.Network) {
+        if (Array.isArray(remoteNetwork.Network)) {
+          return remoteNetwork.Network.join(', ')
+        }
+        return remoteNetwork.Network
+      }
+      return 'N/A'
+    }
+
+    return (
+      <div className="mb-6">
+        <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
+          <Icon name="vpn_key" className="text-indigo-600 text-base" />
+          <span>VPN IPSec Connections</span>
+          <span className="text-gray-500 font-normal">({items.length})</span>
+        </h3>
+        <div className="overflow-x-auto border border-gray-300 rounded-lg shadow-sm">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-12">#</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Connection Type</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Local</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Remote</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Policy</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {items.map((it, idx) => {
+                const fields = it.fields || {}
+                const localID = fields.LocalID || ''
+                const localIDType = fields.LocalIDType || ''
+                const localSubnet = fields.LocalSubnet || ''
+                const localWANPort = fields.LocalWANPort || fields.AliasLocalWANPort || ''
+                const remoteID = fields.RemoteID || ''
+                const remoteIDType = fields.RemoteIDType || ''
+                const remoteHost = fields.RemoteHost || ''
+                const remoteNetwork = formatRemoteNetwork(fields)
+                
+                const localInfo = [
+                  localID && `${localIDType}: ${localID}`,
+                  localSubnet && localSubnet !== 'Any' && `Subnet: ${localSubnet}`,
+                  localWANPort && `Port: ${localWANPort}`
+                ].filter(Boolean).join(' | ')
+                
+                const remoteInfo = [
+                  remoteID && `${remoteIDType}: ${remoteID}`,
+                  remoteHost && remoteHost !== '*' && `Host: ${remoteHost}`,
+                  remoteNetwork && remoteNetwork !== 'Any' && `Network: ${remoteNetwork}`
+                ].filter(Boolean).join(' | ')
+
+                return (
+                  <tr key={`vpn-${it.transactionId}-${it.configIndex || idx}-${idx}`} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2.5 text-xs text-gray-600 font-medium">{idx + 1}</td>
+                    <td className="px-4 py-2.5 text-sm font-medium text-gray-900" style={{ 
+                      wordBreak: 'break-word', 
+                      overflowWrap: 'anywhere',
+                      maxWidth: '200px'
+                    }}>{it.name || fields.Name || ''}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-700" style={{ 
+                      wordBreak: 'break-word', 
+                      overflowWrap: 'anywhere',
+                      maxWidth: '150px'
+                    }}>{fields.ConnectionType || 'N/A'}</td>
+                    <td className="px-4 py-2.5 text-xs">
+                      <span className={`px-2 py-0.5 rounded-full font-medium ${
+                        fields.Status === 'Active' 
+                          ? 'bg-green-100 text-green-700' 
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {fields.Status || 'N/A'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-xs text-gray-800" style={{ 
+                      wordBreak: 'break-word', 
+                      overflowWrap: 'anywhere',
+                      maxWidth: '250px'
+                    }}>{localInfo || 'N/A'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-800" style={{ 
+                      wordBreak: 'break-word', 
+                      overflowWrap: 'anywhere',
+                      maxWidth: '250px'
+                    }}>{remoteInfo || 'N/A'}</td>
+                    <td className="px-4 py-2.5 text-xs text-gray-700" style={{ 
+                      wordBreak: 'break-word', 
+                      overflowWrap: 'anywhere',
+                      maxWidth: '200px'
+                    }}>{fields.Policy || 'N/A'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('en-US', { 
       year: 'numeric', 
@@ -923,9 +1032,27 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
   }
   
   // Filter sections by search
-  const filteredSections = allSections.filter(section => 
+  let filteredSections = allSections.filter(section => 
     section.name.toLowerCase().includes(sectionSearch.toLowerCase())
   )
+  
+  // Apply sorting
+  if (sortOption !== 'default') {
+    filteredSections = [...filteredSections].sort((a, b) => {
+      switch (sortOption) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name)
+        case 'name-desc':
+          return b.name.localeCompare(a.name)
+        case 'count-desc':
+          return (b.count || 0) - (a.count || 0)
+        case 'count-asc':
+          return (a.count || 0) - (b.count || 0)
+        default:
+          return 0
+      }
+    })
+  }
 
   // Table of Contents sections - Updated to match new organization
   const tocSections = []
@@ -983,6 +1110,23 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             onFocus={(e) => e.target.style.boxShadow = '0 0 0 1px #005BC8'}
             onBlur={(e) => e.target.style.boxShadow = ''}
           />
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value)}
+            className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:outline-none mb-1.5"
+            style={{ 
+              '--tw-ring-color': '#005BC8',
+              fontFamily: 'Arial, Helvetica, sans-serif'
+            }}
+            onFocus={(e) => e.target.style.boxShadow = '0 0 0 1px #005BC8'}
+            onBlur={(e) => e.target.style.boxShadow = ''}
+          >
+            <option value="default">Sort: Default</option>
+            <option value="name-asc">Sort: Name (A-Z)</option>
+            <option value="name-desc">Sort: Name (Z-A)</option>
+            <option value="count-desc">Sort: Count (High to Low)</option>
+            <option value="count-asc">Sort: Count (Low to High)</option>
+          </select>
           <div className="flex gap-1.5">
             <button
               onClick={() => onSelectAll && onSelectAll()}
@@ -1071,7 +1215,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                       onClick={(e) => e.stopPropagation()}
                     />
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                      <Icon name={section.icon} className={`${getEntityColor(section.key)} text-sm flex-shrink-0`} />
+                      <Icon name={section.icon} className="text-gray-600 text-sm flex-shrink-0" />
                       <span className="text-xs text-gray-700 truncate">{section.name}</span>
                       {section.count !== null && (
                         <span className="text-xs text-gray-500 font-medium ml-auto flex-shrink-0">({section.count})</span>
@@ -1100,7 +1244,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 onLoad={() => setLogoLoaded(true)}
                 onError={() => setLogoError(true)}
               />
-              <Shield className="w-7 h-7 text-white" style={{ display: logoLoaded && !logoError ? 'none' : 'block' }} />
+              <Zap className="w-7 h-7 text-white" style={{ display: logoLoaded && !logoError ? 'none' : 'block' }} />
             </div>
             <div>
               <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>Firewall Configuration Report</h1>
@@ -1353,9 +1497,25 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                       User Policy Details
                     </h4>
                     <div className="space-y-1">
-                      {flat.identity && (
-                        <ReportField label="Identity/Groups" value={flat.identity} />
-                      )}
+                      {(() => {
+                        // Extract Identity - try flattened version first, then fallback to policy
+                        let identityValue = flat.identity;
+                        if (!identityValue && policy.Identity) {
+                          const identity = policy.Identity;
+                          if (Array.isArray(identity)) {
+                            identityValue = identity.join(', ');
+                          } else if (identity.Member) {
+                            identityValue = Array.isArray(identity.Member) 
+                              ? identity.Member.join(', ') 
+                              : identity.Member;
+                          } else if (typeof identity === 'string') {
+                            identityValue = identity;
+                          }
+                        }
+                        return identityValue ? (
+                          <ReportField label="Identity/Groups" value={identityValue} />
+                        ) : null;
+                      })()}
                       {policy.MatchIdentity && (
                         <ReportField label="Match Identity" value={policy.MatchIdentity} />
                       )}
@@ -2335,12 +2495,16 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                   className="bg-white"
             style={{ boxShadow: '0px 0px 6px 0px rgba(0, 0, 0, 0.1)', borderRadius: '4px' }}
                 >
-                  <EntityTable
-                    title={`${tag}`}
-                    icon={getEntityIcon(tag)}
-                    items={items}
-                    primaryKeyLabel={null}
-                  />
+                  {tag === 'VPNIPSecConnection' ? (
+                    <VPNIPSecConnectionTable items={items} />
+                  ) : (
+                    <EntityTable
+                      title={`${tag}`}
+                      icon={getEntityIcon(tag)}
+                      items={items}
+                      primaryKeyLabel={null}
+                    />
+                  )}
                 </CollapsibleSection>
               </div>
             ))

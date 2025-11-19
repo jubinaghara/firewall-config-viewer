@@ -1,4 +1,4 @@
-import { Shield, Globe, Users, Server, Filter, Settings, AlertTriangle } from 'lucide-react'
+import { Zap, Globe, Users, Server, Filter, Settings, AlertTriangle } from 'lucide-react'
 import theme from '../theme'
 
 export default function RuleDetails({ rule, flat }) {
@@ -55,7 +55,7 @@ export default function RuleDetails({ rule, flat }) {
         {/* Basic Information */}
         <div>
           <div className="flex items-center space-x-2 mb-3">
-            <Shield className="w-5 h-5" style={{ color: theme.colors.primary.main }} />
+            <Zap className="w-5 h-5" style={{ color: theme.colors.primary.main }} />
             <h3 className="text-sm font-semibold" style={{ color: theme.colors.text.primary }}>Basic Information</h3>
           </div>
           <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-2">
@@ -114,7 +114,23 @@ export default function RuleDetails({ rule, flat }) {
               <h3 className="text-sm font-semibold" style={{ color: theme.colors.text.primary }}>User Policy</h3>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-2">
-              {flat.identity && <DetailRow label="Identity" value={flat.identity} />}
+              {(() => {
+                // Extract Identity - try flattened version first, then fallback to policy
+                let identityValue = flat.identity;
+                if (!identityValue && policy.Identity) {
+                  const identity = policy.Identity;
+                  if (Array.isArray(identity)) {
+                    identityValue = identity.join(', ');
+                  } else if (identity.Member) {
+                    identityValue = Array.isArray(identity.Member) 
+                      ? identity.Member.join(', ') 
+                      : identity.Member;
+                  } else if (typeof identity === 'string') {
+                    identityValue = identity;
+                  }
+                }
+                return identityValue ? <DetailRow label="Identity" value={identityValue} /> : null;
+              })()}
               {policy.MatchIdentity && (
                 <DetailRow label="Match Identity" value={policy.MatchIdentity} />
               )}

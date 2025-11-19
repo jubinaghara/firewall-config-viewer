@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Shield, X, Lock, FileText, GitCompare } from 'lucide-react'
+import { Zap, X, Lock, FileText, GitCompare, Network } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DualUploadZone from './components/DualUploadZone'
 import ReportView from './components/ReportView'
 import DiffView from './components/DiffView'
 import ExportButton from './components/ExportButton'
+import ConfigurationTree from './components/ConfigurationTree'
 import { parseEntitiesXML } from './utils/xmlParser'
 import { compareXMLFiles } from './utils/xmlDiff'
 import { getThemeStyles, combineStyles } from './utils/themeUtils'
@@ -21,6 +22,9 @@ function App() {
   const [newFileName, setNewFileName] = useState(null)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [xmlContent, setXmlContent] = useState(null) // Store raw XML for Configuration Tree
+  const [showConfigTree, setShowConfigTree] = useState(false) // Toggle for Configuration Tree view
+  const [configTreeLoading, setConfigTreeLoading] = useState(false) // Loading state for Configuration Tree
   
   // Privacy notice state - check if user has dismissed it
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(() => {
@@ -80,16 +84,18 @@ function App() {
     }
   }, [parsedData])
 
-  const handleFileUpload = async (xmlContent) => {
+  const handleFileUpload = async (xmlContentString) => {
     setLoading(true)
     setError(null)
     try {
-      const data = parseEntitiesXML(xmlContent)
+      const data = parseEntitiesXML(xmlContentString)
       setParsedData(data)
+      setXmlContent(xmlContentString) // Store raw XML for Configuration Tree
       setMode('report')
     } catch (err) {
       setError(err.message || 'Failed to parse XML file')
       setParsedData(null)
+      setXmlContent(null)
     } finally {
       setLoading(false)
     }
@@ -120,6 +126,8 @@ function App() {
     setNewFileName(null)
     setError(null)
     setSectionVisibility({})
+    setXmlContent(null)
+    setShowConfigTree(false)
   }
 
   // Get all rules for report view (no filtering)
@@ -141,6 +149,24 @@ function App() {
     Object.keys(allSections).forEach(key => {
       allSelected[key] = true
     })
+    // Explicitly select all certificate types (certificates is a grouped section)
+    if (parsedData.entitiesByTag?.CertificateAuthority) {
+      allSelected.CertificateAuthority = true
+    }
+    if (parsedData.entitiesByTag?.SelfSignedCertificate) {
+      allSelected.SelfSignedCertificate = true
+    }
+    if (parsedData.entitiesByTag?.Certificate) {
+      allSelected.Certificate = true
+    }
+    // Also ensure all dynamic entities are selected
+    if (parsedData.entitiesByTag) {
+      Object.keys(parsedData.entitiesByTag).forEach(tag => {
+        if (parsedData.entitiesByTag[tag]?.length > 0) {
+          allSelected[tag] = true
+        }
+      })
+    }
     setSectionVisibility(allSelected)
   }
   
@@ -152,6 +178,16 @@ function App() {
     Object.keys(allSections).forEach(key => {
       allDeselected[key] = false
     })
+    // Explicitly deselect all certificate types (certificates is a grouped section)
+    allDeselected.CertificateAuthority = false
+    allDeselected.SelfSignedCertificate = false
+    allDeselected.Certificate = false
+    // Also ensure all dynamic entities are deselected
+    if (parsedData.entitiesByTag) {
+      Object.keys(parsedData.entitiesByTag).forEach(tag => {
+        allDeselected[tag] = false
+      })
+    }
     setSectionVisibility(allDeselected)
   }
 
@@ -223,12 +259,12 @@ function App() {
                 className="h-7 w-auto"
                 style={{ maxHeight: '32px' }}
                 onError={(e) => {
-                  // Fallback to Shield icon if logo not found
+                  // Fallback to Bolt icon if logo not found
                   e.target.style.display = 'none'
                   e.target.nextElementSibling.style.display = 'block'
                 }}
               />
-              <Shield className="w-7 h-7" style={{ display: 'none', color: theme.components.header.text }} />
+              <Zap className="w-7 h-7" style={{ display: 'none', color: theme.components.header.text }} />
               <div>
                 <h1 className="text-xl font-semibold" style={combineStyles(
                   { color: 'components.header.text', fontFamily: 'typography.fontFamily.primary' }
@@ -269,7 +305,7 @@ function App() {
             <div className="text-center mb-16 mt-8">
               <div className="inline-flex items-center justify-center mb-6">
                 <div className="p-3 rounded-full" style={{ background: theme.colors.primary.gradient }}>
-                  <Shield className="w-10 h-10 text-white" />
+                  <Zap className="w-10 h-10 text-white" />
                 </div>
               </div>
               <h1 className="text-4xl font-bold mb-4" style={combineStyles(
@@ -319,9 +355,10 @@ function App() {
                       Analyze firewall rules, hosts, services, and network entities with an intuitive, 
                       exportable report format.
                     </p>
-                    <div className="flex items-center text-sm font-semibold" style={combineStyles(
-                      { color: theme.components.landingCard.linkColor, fontFamily: 'typography.fontFamily.primary' }
-                    )}>
+                    <div className="flex items-center text-sm font-semibold" style={{
+                      color: theme.components.landingCard.linkColor,
+                      fontFamily: theme.typography.fontFamily.primary
+                    }}>
                       <span>Get Started</span>
                       <svg className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -364,9 +401,10 @@ function App() {
                       Identify changes, additions, and deletions with a GitHub-style diff view 
                       that highlights exactly what changed between versions.
                     </p>
-                    <div className="flex items-center text-sm font-semibold" style={combineStyles(
-                      { color: theme.components.landingCard.linkColor, fontFamily: 'typography.fontFamily.primary' }
-                    )}>
+                    <div className="flex items-center text-sm font-semibold" style={{
+                      color: theme.components.landingCard.linkColor,
+                      fontFamily: theme.typography.fontFamily.primary
+                    }}>
                       <span>Get Started</span>
                       <svg className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -383,7 +421,7 @@ function App() {
                 <h2 className="text-3xl font-bold mb-3" style={combineStyles(
                   { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                 )}>
-                  Why Choose This Tool
+                  About This Tool
                 </h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -404,7 +442,7 @@ function App() {
                 </div>
                 <div className="text-center">
                   <div className="inline-flex items-center justify-center w-16 h-16 rounded-full mb-4" style={{ backgroundColor: theme.colors.primary.light }}>
-                    <Shield className="w-8 h-8" style={{ color: theme.colors.primary.main }} />
+                    <Zap className="w-8 h-8" style={{ color: theme.colors.primary.main }} />
                   </div>
                   <h3 className="text-lg font-semibold mb-2" style={combineStyles(
                     { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
@@ -443,18 +481,59 @@ function App() {
           </div>
         )}
 
-        {mode === 'report' && parsedData && (
+        {mode === 'report' && parsedData && !showConfigTree && (
           <div className="bg-white p-8 print:p-4" style={combineStyles(
             { boxShadow: 'shadows.md', borderRadius: 'borderRadius.md' }
           )}>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-bold text-gray-900">Configuration Report</h2>
-              <ExportButton 
-                viewMode="report" 
-                data={parsedData}
-                sectionVisibility={sectionVisibility}
-                onToggleSection={toggleSection}
-              />
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setConfigTreeLoading(true)
+                    setShowConfigTree(true)
+                    // Loading will be handled by ConfigurationTree component
+                  }}
+                  disabled={configTreeLoading}
+                  className="px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={combineStyles(
+                    { 
+                      color: 'components.button.secondary.text',
+                      backgroundColor: 'components.button.secondary.bg',
+                      fontFamily: 'typography.fontFamily.primary',
+                      border: `1px solid ${theme.colors.border.medium}`
+                    }
+                  )}
+                  onMouseEnter={(e) => {
+                    if (!configTreeLoading) {
+                      e.target.style.backgroundColor = theme.components.button.secondary.hover
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!configTreeLoading) {
+                      e.target.style.backgroundColor = theme.components.button.secondary.bg
+                    }
+                  }}
+                >
+                  {configTreeLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Network className="w-4 h-4" />
+                      Configuration Tree
+                    </>
+                  )}
+                </button>
+                <ExportButton 
+                  viewMode="report" 
+                  data={parsedData}
+                  sectionVisibility={sectionVisibility}
+                  onToggleSection={toggleSection}
+                />
+              </div>
             </div>
             <ReportView 
               data={parsedData} 
@@ -463,6 +542,19 @@ function App() {
               onToggleSection={toggleSection}
               onSelectAll={selectAllSections}
               onDeselectAll={deselectAllSections}
+            />
+          </div>
+        )}
+
+        {mode === 'report' && parsedData && showConfigTree && (
+          <div className="max-w-7xl mx-auto">
+            <ConfigurationTree 
+              xmlContent={xmlContent}
+              onClose={() => {
+                setShowConfigTree(false)
+                setConfigTreeLoading(false)
+              }}
+              onLoadingChange={setConfigTreeLoading}
             />
           </div>
         )}
