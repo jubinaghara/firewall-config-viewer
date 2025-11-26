@@ -30,13 +30,18 @@ export function parseEntitiesXML(xmlString) {
     return parseFirewallRuleGroup(group);
   });
 
+  // Extract all SSLTLSInspectionRules
+  const sslTlsInspectionRules = Array.from(xmlDoc.querySelectorAll('SSLTLSInspectionRule')).map((rule, index) => {
+    return parseSSLTLSInspectionRule(rule, index);
+  });
+
   // Extract other entity types (best-effort, flexible parsing)
   // Restrict to leaf entity nodes and filter by required child fields to avoid container matches/duplicates
   const ipHosts = parseEntitiesByTags(xmlDoc, ['IPHost'], 'IPHost', null)
   const fqdnHosts = parseEntitiesByTags(xmlDoc, ['FQDNHost'], 'FQDNHost', null)
   const macHosts = parseEntitiesByTags(xmlDoc, ['MACHost'], 'MACHost', null)
-  // Services sometimes appear as <Service> (singular) or nested under collections; we only take leaf <Service> nodes
-  const services = parseEntitiesByTags(xmlDoc, ['Service'], 'Service', null)
+  // Services sometimes appear as <Service> (singular) or <Services> (plural) or nested under collections; we only take leaf nodes
+  const services = parseEntitiesByTags(xmlDoc, ['Service', 'Services'], 'Service', null)
   // Groups can appear under various tags; support common ones
   const groups = parseEntitiesByTags(xmlDoc, ['Group'], 'Group', null)
   const fqdnHostGroups = parseEntitiesByTags(xmlDoc, ['FQDNHostGroup'], 'FQDNHostGroup', null)
@@ -155,7 +160,7 @@ export function parseEntitiesXML(xmlString) {
   vlans.forEach(vlan => {
     const interfaceName = vlan.interface || 'Unknown'
     if (!portsWithEntities[interfaceName]) {
-      portsWithEntities[interfaceName] = { vlans: [], aliases: [] }
+      portsWithEntities[interfaceName] = { vlans: [], aliases: [], xfrmInterfaces: [] }
     }
     portsWithEntities[interfaceName].vlans.push(vlan)
   })
@@ -164,7 +169,7 @@ export function parseEntitiesXML(xmlString) {
   aliases.forEach(alias => {
     const interfaceName = alias.interface || 'Unknown'
     if (!portsWithEntities[interfaceName]) {
-      portsWithEntities[interfaceName] = { vlans: [], aliases: [] }
+      portsWithEntities[interfaceName] = { vlans: [], aliases: [], xfrmInterfaces: [] }
     }
     portsWithEntities[interfaceName].aliases.push(alias)
   })
@@ -259,6 +264,41 @@ export function parseEntitiesXML(xmlString) {
     entitiesByTag['VPNIPSecConnection'] = vpnConnections
   }
 
+  // Special handling: Extract XFRMInterface and find parent interface via VPNIPSecConnection
+  const xfrmInterfaces = Array.from(xmlDoc.querySelectorAll('XFRMInterface'))
+    .map((el, idx) => {
+      const entity = baseParseEntity(el, idx, 'XFRMInterface')
+      return entity
+    })
+    .filter(ent => ent.name || Object.keys(ent.fields || {}).length > 0)
+
+  // Build a map of VPNIPSecConnection Name -> AliasLocalWANPort
+  const vpnConnectionMap = new Map()
+  vpnConnections.forEach(vpnConn => {
+    const connectionName = vpnConn.name || vpnConn.fields?.Name || ''
+    const aliasLocalWANPort = vpnConn.fields?.AliasLocalWANPort || ''
+    if (connectionName && aliasLocalWANPort) {
+      vpnConnectionMap.set(connectionName, aliasLocalWANPort)
+    }
+  })
+
+  // Add XFRMInterfaces to their parent interfaces based on Connectionname -> VPNIPSecConnection -> AliasLocalWANPort
+  xfrmInterfaces.forEach(xfrm => {
+    const connectionName = xfrm.fields?.Connectionname || ''
+    if (connectionName && vpnConnectionMap.has(connectionName)) {
+      const parentInterfaceName = vpnConnectionMap.get(connectionName)
+      if (!portsWithEntities[parentInterfaceName]) {
+        portsWithEntities[parentInterfaceName] = { vlans: [], aliases: [], xfrmInterfaces: [] }
+      }
+      portsWithEntities[parentInterfaceName].xfrmInterfaces.push(xfrm)
+    }
+  })
+
+  // Add XFRMInterfaces to entitiesByTag for backward compatibility
+  if (xfrmInterfaces.length > 0) {
+    entitiesByTag['XFRMInterface'] = xfrmInterfaces
+  }
+
   return {
     metadata: {
       apiVersion,
@@ -267,6 +307,7 @@ export function parseEntitiesXML(xmlString) {
     },
     firewallRules,
     firewallRuleGroups,
+    sslTlsInspectionRules,
     ipHosts,
     fqdnHosts,
     macHosts,
@@ -415,6 +456,119 @@ function parseFirewallRuleGroup(groupElement) {
     securityPolicyList,
     policyType,
   };
+}
+
+/**
+ * Parse a single SSLTLSInspectionRule element
+ */
+function parseSSLTLSInspectionRule(ruleElement, index) {
+  const transactionId = ruleElement.getAttribute('transactionid') || '';
+  
+  const getText = (tagName) => {
+    const el = ruleElement.querySelector(tagName);
+    return el ? el.textContent.trim() : '';
+  };
+
+  const getNestedObject = (tagName) => {
+    const parent = ruleElement.querySelector(tagName);
+    if (!parent) return null;
+    
+    const obj = {};
+    const processedTags = new Set();
+    
+    Array.from(parent.children).forEach(child => {
+      const tag = child.tagName;
+      
+      // Skip if we've already processed this tag (handles arrays)
+      if (processedTags.has(tag)) return;
+      
+      // Check if there are multiple siblings with the same tag (array pattern)
+      const siblings = Array.from(parent.children).filter(c => c.tagName === tag);
+      
+      if (siblings.length > 1) {
+        // Multiple siblings = array
+        obj[tag] = siblings.map(s => {
+          if (s.children.length === 0) {
+            return s.textContent.trim();
+          }
+          // Nested children - check if they're all the same tag
+          const nested = Array.from(s.children);
+          if (nested.length > 0 && nested.every(n => n.tagName === nested[0].tagName && n.children.length === 0)) {
+            return nested.map(n => n.textContent.trim());
+          }
+          return parseObject(s);
+        });
+        processedTags.add(tag);
+      } else {
+        // Single element
+        if (child.children.length === 0) {
+          obj[tag] = child.textContent.trim();
+        } else {
+          // Has children - check if it's an array of same tags
+          const children = Array.from(child.children);
+          const firstTag = children[0]?.tagName;
+          
+          if (firstTag && children.length > 0 && children.every(c => c.tagName === firstTag && c.children.length === 0)) {
+            obj[tag] = children.map(c => c.textContent.trim());
+          } else {
+            // Complex nested object
+            const nestedObj = {};
+            children.forEach(grandchild => {
+              if (grandchild.children.length === 0) {
+                nestedObj[grandchild.tagName] = grandchild.textContent.trim();
+              } else {
+                nestedObj[grandchild.tagName] = parseObject(grandchild);
+              }
+            });
+            obj[tag] = nestedObj;
+          }
+        }
+        processedTags.add(tag);
+      }
+    });
+    return obj;
+  };
+
+  const parseObject = (element) => {
+    const obj = {};
+    Array.from(element.children).forEach(child => {
+      if (child.children.length === 0) {
+        obj[child.tagName] = child.textContent.trim();
+      } else {
+        const children = Array.from(child.children);
+        const firstTag = children[0]?.tagName;
+        if (firstTag && children.every(c => c.tagName === firstTag && c.children.length === 0)) {
+          obj[child.tagName] = children.map(c => c.textContent.trim());
+        } else {
+          obj[child.tagName] = parseObject(child);
+        }
+      }
+    });
+    return obj;
+  };
+
+  const rule = {
+    id: index,
+    transactionId,
+    name: getText('Name'),
+    description: getText('Description'),
+    isDefault: getText('IsDefault'),
+    enable: getText('Enable'),
+    logConnections: getText('LogConnections'),
+    decryptAction: getText('DecryptAction'),
+    decryptionProfile: getText('DecryptionProfile'),
+    moveTo: getNestedObject('MoveTo'),
+    sourceZones: getNestedObject('SourceZones'),
+    sourceNetworks: getNestedObject('SourceNetworks'),
+    destinationZones: getNestedObject('DestinationZones'),
+    destinationNetworks: getNestedObject('DestinationNetworks'),
+    services: getNestedObject('Services'),
+    identity: getNestedObject('Identity'),
+    websites: getNestedObject('Websites'),
+    rawXml: ruleElement.outerHTML,
+  };
+
+  return rule;
 }
 
 /**
@@ -628,6 +782,121 @@ export function flattenFirewallRule(rule) {
       flattened.identity = identity;
     }
   }
+
+  return flattened;
+}
+
+/**
+ * Convert parsed SSLTLSInspectionRule data to flat structure for table display
+ */
+export function flattenSSLTLSInspectionRule(rule) {
+  // Helper to extract array values
+  const getArrayValue = (obj, key, subKey) => {
+    if (!obj || !obj[key]) return '';
+    const value = obj[key];
+    if (Array.isArray(value)) return value.join(', ');
+    if (typeof value === 'object' && subKey && value[subKey]) {
+      return Array.isArray(value[subKey]) ? value[subKey].join(', ') : value[subKey];
+    }
+    if (typeof value === 'object' && !subKey) {
+      // For nested objects like Websites.Activity, extract all values
+      const values = [];
+      Object.values(value).forEach(v => {
+        if (Array.isArray(v)) {
+          v.forEach(item => {
+            if (typeof item === 'object' && item.Name) {
+              values.push(item.Name);
+            } else if (typeof item === 'string') {
+              values.push(item);
+            }
+          });
+        } else if (typeof v === 'object' && v.Name) {
+          values.push(v.Name);
+        } else if (typeof v === 'string') {
+          values.push(v);
+        }
+      });
+      return values.join(', ');
+    }
+    return typeof value === 'string' ? value : '';
+  };
+
+  const flattened = {
+    id: rule.id,
+    name: rule.name,
+    description: rule.description,
+    isDefault: rule.isDefault,
+    enable: rule.enable,
+    logConnections: rule.logConnections,
+    decryptAction: rule.decryptAction,
+    decryptionProfile: rule.decryptionProfile,
+    sourceZones: getArrayValue(rule, 'sourceZones', 'Zone'),
+    sourceNetworks: getArrayValue(rule, 'sourceNetworks', 'Network'),
+    destinationZones: getArrayValue(rule, 'destinationZones', 'Zone'),
+    destinationNetworks: getArrayValue(rule, 'destinationNetworks', 'Network'),
+    services: getArrayValue(rule, 'services', 'Service'),
+    identity: getArrayValue(rule, 'identity', 'Members'),
+    websites: getArrayValue(rule, 'websites', null),
+    moveToName: rule.moveTo?.Name || '',
+    moveToOrderBy: rule.moveTo?.OrderBy || '',
+  };
+
+  return flattened;
+}
+
+/**
+ * Convert NAT rule entity data to flat structure for display
+ */
+export function flattenNATRule(rule) {
+  const fields = rule.fields || {};
+  
+  // Helper to extract array values
+  const getArrayValue = (key, subKey) => {
+    const value = fields[key];
+    if (!value) return '';
+    if (Array.isArray(value)) return value.join(', ');
+    if (typeof value === 'object' && subKey && value[subKey]) {
+      return Array.isArray(value[subKey]) ? value[subKey].join(', ') : value[subKey];
+    }
+    if (typeof value === 'object' && !subKey) {
+      // Extract all string values from object
+      const values = [];
+      Object.values(value).forEach(v => {
+        if (Array.isArray(v)) {
+          values.push(...v.map(String));
+        } else if (typeof v === 'string') {
+          values.push(v);
+        }
+      });
+      return values.join(', ');
+    }
+    return typeof value === 'string' ? value : '';
+  };
+
+  const flattened = {
+    id: rule.transactionId || rule.id || '',
+    name: rule.name || fields.Name || '',
+    description: fields.Description || '',
+    status: fields.Status || fields.Enable || '',
+    ipFamily: fields.IPFamily || '',
+    position: fields.Position || '',
+    after: fields.After || '',
+    natType: fields.NATType || fields.Type || '',
+    action: fields.Action || '',
+    logTraffic: fields.LogTraffic || '',
+    sourceZones: getArrayValue('SourceZones', 'Zone'),
+    destinationZones: getArrayValue('DestinationZones', 'Zone'),
+    sourceNetworks: getArrayValue('SourceNetworks', 'Network'),
+    destinationNetworks: getArrayValue('DestinationNetworks', 'Network'),
+    services: getArrayValue('Services', 'Service'),
+    originalSource: fields.OriginalSource || getArrayValue('OriginalSource', 'Network'),
+    translatedSource: fields.TranslatedSource || getArrayValue('TranslatedSource', 'Network'),
+    originalDestination: fields.OriginalDestination || getArrayValue('OriginalDestination', 'Network'),
+    translatedDestination: fields.TranslatedDestination || getArrayValue('TranslatedDestination', 'Network'),
+    originalService: fields.OriginalService || '',
+    translatedService: fields.TranslatedService || '',
+    schedule: fields.Schedule || '',
+  };
 
   return flattened;
 }

@@ -1,4 +1,4 @@
-import { flattenFirewallRule, formatTagName } from './xmlParser'
+import { flattenFirewallRule, flattenSSLTLSInspectionRule, flattenNATRule, formatTagName } from './xmlParser'
 
 // Icon mapping function - comprehensive with unique icons for all entities
 function getEntityIcon(tagName) {
@@ -237,10 +237,159 @@ function formatDate(date) {
   })
 }
 
+// Helper to format ServiceDetails for Services as HTML table
+function formatServiceDetails(fields) {
+  if (!fields) return ''
+  
+  const serviceDetails = fields?.ServiceDetails
+  if (!serviceDetails || typeof serviceDetails !== 'object') return ''
+  
+  // Handle ServiceDetails.ServiceDetail array
+  // ServiceDetail can be an array or a single object
+  let details = serviceDetails.ServiceDetail
+  if (!details) {
+    // Try alternative structure - maybe ServiceDetail is directly an array at ServiceDetails level
+    if (Array.isArray(serviceDetails) && serviceDetails.length > 0) {
+      details = serviceDetails
+    } else {
+      return ''
+    }
+  }
+  
+  const arr = Array.isArray(details) ? details : [details]
+  if (arr.length === 0) return ''
+  
+  const serviceType = (fields?.Type || '').trim().toUpperCase()
+  
+  // Build table rows
+  let tableRows = ''
+  
+  if (serviceType === 'IP') {
+    // IP type services - single column for Protocol
+    tableRows = arr.map((d, idx) => {
+      if (!d || typeof d !== 'object' || !d.ProtocolName) return ''
+      return `
+        <tr style="border-bottom: 1px solid #f3f4f6;">
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(d.ProtocolName)}</td>
+        </tr>
+      `
+    }).filter(Boolean).join('')
+    
+    if (!tableRows) return ''
+    
+    return `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+        <thead>
+          <tr style="background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">Protocol</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `
+  } else if (serviceType === 'ICMPV6') {
+    // ICMPv6 type services - two columns for ICMPv6Type and ICMPv6Code
+    tableRows = arr.map((d, idx) => {
+      if (!d || typeof d !== 'object') return ''
+      const icmpv6Type = d.ICMPv6Type || d.ICMPV6Type || '-'
+      const icmpv6Code = d.ICMPv6Code || d.ICMPV6Code || '-'
+      return `
+        <tr style="border-bottom: 1px solid #f3f4f6;">
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(icmpv6Type)}</td>
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(icmpv6Code)}</td>
+        </tr>
+      `
+    }).filter(Boolean).join('')
+    
+    if (!tableRows) return ''
+    
+    return `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+        <thead>
+          <tr style="background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">ICMPv6 Type</th>
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">ICMPv6 Code</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `
+  } else if (serviceType === 'ICMP') {
+    // ICMP type services - two columns for ICMPType and ICMPCode
+    tableRows = arr.map((d, idx) => {
+      if (!d || typeof d !== 'object') return ''
+      const icmpType = d.ICMPType || d.ICMPTYPE || '-'
+      const icmpCode = d.ICMPCode || d.ICMPCODE || '-'
+      return `
+        <tr style="border-bottom: 1px solid #f3f4f6;">
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(icmpType)}</td>
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(icmpCode)}</td>
+        </tr>
+      `
+    }).filter(Boolean).join('')
+    
+    if (!tableRows) return ''
+    
+    return `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+        <thead>
+          <tr style="background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">ICMP Type</th>
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">ICMP Code</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `
+  } else {
+    // TCPorUDP type services - three columns
+    tableRows = arr.map((d, idx) => {
+      if (!d || typeof d !== 'object') return ''
+      const src = d.SourcePort || d.SourcePorts || '-'
+      const dst = d.DestinationPort || d.DestinationPorts || '-'
+      const proto = d.Protocol || fields?.Protocol || '-'
+      
+      return `
+        <tr style="border-bottom: 1px solid #f3f4f6;">
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(proto)}</td>
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(src)}</td>
+          <td style="padding: 0.25rem 0.5rem; color: #1f2937;">${escapeHtml(dst)}</td>
+        </tr>
+      `
+    }).filter(Boolean).join('')
+    
+    if (!tableRows) return ''
+    
+    return `
+      <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem;">
+        <thead>
+          <tr style="background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">Protocol</th>
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">Source Port</th>
+            <th style="padding: 0.375rem 0.5rem; text-align: left; font-weight: 600; color: #374151; font-size: 0.75rem;">Destination Port</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+    `
+  }
+}
+
 // Helper to flatten entity fields
-function flattenFields(obj, prefix = '') {
+function flattenFields(obj, prefix = '', isService = false, parentContext = null) {
   const rows = []
   if (!obj || typeof obj !== 'object') return rows
+
+  // For Services, use the root fields object as context (to access Type, etc.)
+  const rootContext = parentContext || (isService && prefix === '' ? obj : null)
 
   const summarizeObject = (o) => {
     if (!o || typeof o !== 'object') return String(o ?? '')
@@ -274,6 +423,22 @@ function flattenFields(obj, prefix = '') {
 
   Object.entries(obj).forEach(([key, value]) => {
     const fullKey = prefix ? `${prefix}.${key}` : key
+    
+    // Special handling for ServiceDetails in Services - use root context to get Type
+    if (isService && key === 'ServiceDetails' && value && typeof value === 'object') {
+      // Use rootContext if available, otherwise use current obj
+      const context = rootContext || obj
+      const formatted = formatServiceDetails({ ...context, ServiceDetails: value })
+      if (formatted) {
+        rows.push([fullKey, formatted])
+      } else if (value.ServiceDetail) {
+        // Fallback: if formatting fails but ServiceDetail exists, show a summary
+        const detailCount = Array.isArray(value.ServiceDetail) ? value.ServiceDetail.length : 1
+        rows.push([fullKey, `${detailCount} service detail${detailCount !== 1 ? 's' : ''} configured`])
+      }
+      return
+    }
+    
     if (value == null) return
     if (Array.isArray(value)) {
       if (value.length === 0) return
@@ -283,12 +448,28 @@ function flattenFields(obj, prefix = '') {
         rows.push([fullKey, summarized])
       } else {
         value.forEach((item, idx) => {
-          const subRows = flattenFields(item, `${fullKey}[${idx}]`)
+          const subRows = flattenFields(item, `${fullKey}[${idx}]`, isService, rootContext)
           rows.push(...subRows)
         })
       }
     } else if (typeof value === 'object') {
-      const subRows = flattenFields(value, fullKey)
+      // Special handling: if we encounter ServiceDetails nested, and we're in a service context,
+      // try to format it using root context
+      if (isService && key === 'ServiceDetails' && value && typeof value === 'object' && value.ServiceDetail) {
+        const context = rootContext || obj
+        const formatted = formatServiceDetails({ ...context, ServiceDetails: value })
+        if (formatted) {
+          rows.push([fullKey, formatted])
+          return
+        } else {
+          // Fallback: if formatting fails but ServiceDetail exists, show a summary
+          const detailCount = Array.isArray(value.ServiceDetail) ? value.ServiceDetail.length : 1
+          rows.push([fullKey, `${detailCount} service detail${detailCount !== 1 ? 's' : ''} configured`])
+          return
+        }
+      }
+      
+      const subRows = flattenFields(value, fullKey, isService, rootContext)
       if (subRows.length === 0) {
         rows.push([fullKey, summarizeObject(value)])
       } else {
@@ -301,15 +482,93 @@ function flattenFields(obj, prefix = '') {
   return rows
 }
 
+// Generate Services table HTML - matches ReportView.jsx format exactly
+function generateServicesTable(items) {
+  if (!items || items.length === 0) return ''
+  
+  let rows = ''
+  items.forEach((it, idx) => {
+    const name = escapeHtml(it.name || it.fields?.Name || '')
+    const serviceType = escapeHtml(it.fields?.Type || '-')
+    const description = escapeHtml(it.fields?.Description || '')
+    
+    // Format ServiceDetails - get formatted table or fallback
+    const formatted = formatServiceDetails(it.fields)
+    let serviceDetailsHtml = ''
+    if (formatted) {
+      serviceDetailsHtml = formatted
+    } else {
+      // Fallback: if ServiceDetails exists but formatting failed, show a summary
+      const serviceDetails = it.fields?.ServiceDetails
+      if (serviceDetails && typeof serviceDetails === 'object') {
+        const details = serviceDetails.ServiceDetail
+        if (details) {
+          const count = Array.isArray(details) ? details.length : 1
+          serviceDetailsHtml = `<span style="font-size: 0.75rem; color: #4b5563;">${count} service detail${count !== 1 ? 's' : ''} configured</span>`
+        } else {
+          serviceDetailsHtml = '<span style="font-size: 0.75rem; color: #9ca3af; font-style: italic;">No service details</span>'
+        }
+      } else {
+        serviceDetailsHtml = '<span style="font-size: 0.75rem; color: #9ca3af; font-style: italic;">No service details</span>'
+      }
+    }
+    
+    rows += `
+      <tr style="border-bottom: 1px solid #e5e7eb;">
+        <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #4b5563; font-weight: 500;">${idx + 1}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 500; color: #111827; word-break: break-word; overflow-wrap: anywhere; max-width: 200px;">${name}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 500; color: #1f2937; word-break: break-word; overflow-wrap: anywhere; max-width: 120px;">${serviceType}</td>
+        <td style="padding: 0.625rem 1rem; font-size: 0.875rem; color: #374151; word-break: break-word; overflow-wrap: anywhere; max-width: 300px;">${description}</td>
+        <td style="padding: 0.625rem 1rem; max-width: 400px;">${serviceDetailsHtml}</td>
+      </tr>
+    `
+  })
+  
+  return `
+    <div style="margin-bottom: 1.5rem;">
+      <h3 style="font-size: 0.875rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; padding-bottom: 0.375rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.5rem;">
+        <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">construction</span>
+        <span>Services</span>
+        <span style="color: #6b7280; font-weight: normal;">(${items.length})</span>
+      </h3>
+      <div style="overflow-x: auto; border: 1px solid #d1d5db; border-radius: 0.5rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead style="background-color: #f3f4f6;">
+            <tr>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; width: 3rem;">#</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Name</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Type</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Description</th>
+              <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Service Details</th>
+            </tr>
+          </thead>
+          <tbody style="background-color: #ffffff;">
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
 // Generate entity table HTML
 function generateEntityTable(title, icon, items, primaryKeyLabel = null, primaryValueGetter = null) {
   if (!items || items.length === 0) return ''
+  
+  // Detect if this is a Services table - check multiple conditions
+  const isService = title.toLowerCase().includes('service') || 
+                    (items.length > 0 && (
+                      items[0].fields?.ServiceDetails !== undefined ||
+                      items[0].tag === 'Service' || 
+                      items[0].tag === 'Services' ||
+                      items.some(item => item.fields?.ServiceDetails !== undefined)
+                    ))
   
   let rows = ''
   items.forEach((it, idx) => {
     const name = escapeHtml(it.name || it.fields?.Name || primaryValueGetter?.(it) || formatTagName(it.tag || '') || '')
     const primary = primaryKeyLabel && primaryValueGetter ? escapeHtml(primaryValueGetter(it)) : ''
-    const details = flattenFields(it.fields)
+    const details = flattenFields(it.fields, '', isService)
     
     let detailsHtml = ''
     if (details.length === 0) {
@@ -323,7 +582,9 @@ function generateEntityTable(title, icon, items, primaryKeyLabel = null, primary
           </colgroup>
           <tbody>
             ${details.map(([k, v]) => {
-              const val = escapeHtml(String(v))
+              // If this is ServiceDetails and it's already formatted as HTML table, don't escape it
+              const isServiceDetailsTable = k === 'ServiceDetails' && typeof v === 'string' && v.includes('<table')
+              const val = isServiceDetailsTable ? v : escapeHtml(String(v))
               return `
                 <tr style="border-bottom: 1px solid #f3f4f6;">
                   <td style="padding: 0.25rem 1rem 0.25rem 0; color: #6b7280; font-weight: 500; width: 250px; word-break: break-word; overflow-wrap: break-word; white-space: normal; vertical-align: top;">${escapeHtml(k)}</td>
@@ -336,10 +597,14 @@ function generateEntityTable(title, icon, items, primaryKeyLabel = null, primary
       `
     }
     
+    // For Services, add Type column
+    const serviceType = isService ? (it.fields?.Type || '-') : null
+    
     rows += `
       <tr style="border-bottom: 1px solid #e5e7eb;">
         <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #4b5563; font-weight: 500;">${idx + 1}</td>
         <td style="padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 500; color: #111827; word-break: break-word; overflow-wrap: anywhere; max-width: 200px;">${name}</td>
+        ${isService ? `<td style="padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 500; color: #1f2937; word-break: break-word; overflow-wrap: anywhere; max-width: 120px;">${escapeHtml(serviceType)}</td>` : ''}
         ${primaryKeyLabel ? `<td style="padding: 0.625rem 1rem; font-size: 0.875rem; color: #1f2937; word-break: break-word; overflow-wrap: anywhere; max-width: 250px;">${primary}</td>` : ''}
         <td style="padding: 0.625rem 1rem; font-size: 0.75rem; color: #374151; max-width: 500px;">
           <div style="display: grid; grid-template-columns: 1fr; gap: 0.375rem;">
@@ -363,6 +628,7 @@ function generateEntityTable(title, icon, items, primaryKeyLabel = null, primary
             <tr>
               <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; width: 3rem;">#</th>
               <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Name</th>
+              ${isService ? `<th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Type</th>` : ''}
               ${primaryKeyLabel ? `<th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">${escapeHtml(primaryKeyLabel)}</th>` : ''}
               <th style="padding: 0.625rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em;">Details</th>
             </tr>
@@ -442,7 +708,7 @@ function generateVPNIPSecConnectionTable(items) {
   return `
     <div style="margin-bottom: 1.5rem;">
       <h3 style="font-size: 0.875rem; font-weight: 600; color: #111827; margin-bottom: 0.75rem; padding-bottom: 0.375rem; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 0.5rem;">
-        <span class="material-symbols-outlined" style="font-size: 1rem; color: #6366f1;">vpn_key</span>
+        <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">vpn_key</span>
         <span>VPN IPSec Connections</span>
         <span style="color: #6b7280; font-weight: normal;">(${items.length})</span>
       </h3>
@@ -466,6 +732,267 @@ function generateVPNIPSecConnectionTable(items) {
       </div>
     </div>
   `
+}
+
+// Helper function to convert netmask to CIDR notation
+function netmaskToCIDR(netmask) {
+  if (!netmask) return null
+  const parts = netmask.split('.')
+  if (parts.length !== 4) return null
+  let cidr = 0
+  for (let i = 0; i < 4; i++) {
+    const octet = parseInt(parts[i], 10)
+    if (isNaN(octet) || octet < 0 || octet > 255) return null
+    const binary = octet.toString(2).padStart(8, '0')
+    for (let bit = 0; bit < 8; bit++) {
+      if (binary[bit] === '1') {
+        cidr++
+      } else {
+        for (let check = bit + 1; check < 8; check++) {
+          if (binary[check] === '1') return null
+        }
+        break
+      }
+    }
+  }
+  return cidr
+}
+
+// Generate interfaces section HTML with VLANs, Aliases, and XFRMInterfaces
+function generateInterfacesSection(data) {
+  const interfaceEntities = data.entitiesByTag?.Interface || []
+  const portsWithEntities = data.portsWithEntities || {}
+  const lagsWithMembers = data.lagsWithMembers || {}
+  
+  // Build set of interface names that are LAG members
+  const lagMemberInterfaces = new Set()
+  Object.values(lagsWithMembers).forEach(({ members }) => {
+    members.forEach(member => {
+      const memberName = member.name || member.fields?.Name || ''
+      if (memberName) {
+        lagMemberInterfaces.add(memberName)
+      }
+    })
+  })
+  
+  // Create a map of interface names to their entities
+  const interfaceMap = new Map()
+  interfaceEntities.forEach(intf => {
+    const name = intf.name || intf.fields?.Name || ''
+    if (name && !lagMemberInterfaces.has(name)) {
+      interfaceMap.set(name, intf)
+    }
+  })
+  
+  // Collect all unique interface names
+  const allInterfaceNames = new Set([
+    ...interfaceEntities
+      .map(intf => intf.name || intf.fields?.Name)
+      .filter(Boolean)
+      .filter(name => !lagMemberInterfaces.has(name)),
+    ...Object.keys(portsWithEntities).filter(name => !lagMemberInterfaces.has(name))
+  ])
+  
+  if (allInterfaceNames.size === 0) {
+    return '<p style="padding: 1rem; color: #6b7280;">No interfaces found</p>'
+  }
+  
+  let html = '<div style="display: flex; flex-direction: column; gap: 0.75rem;">'
+  
+  Array.from(allInterfaceNames).sort().forEach(interfaceName => {
+    const interfaceEntity = interfaceMap.get(interfaceName)
+    const portData = portsWithEntities[interfaceName] || { vlans: [], aliases: [], xfrmInterfaces: [] }
+    const hasVlans = portData.vlans && portData.vlans.length > 0
+    const hasAliases = portData.aliases && portData.aliases.length > 0
+    const hasXfrmInterfaces = portData.xfrmInterfaces && portData.xfrmInterfaces.length > 0
+    
+    if (!interfaceEntity && !hasVlans && !hasAliases && !hasXfrmInterfaces) {
+      return
+    }
+    
+    html += '<div style="border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; background-color: #ffffff; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">'
+    
+    // Interface header
+    if (interfaceEntity) {
+      html += `<div style="background: linear-gradient(to right, #eff6ff, #e0e7ff); padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb;">`
+      html += `<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem;">`
+      html += `<div style="display: flex; align-items: center; gap: 0.375rem;">`
+      html += `<span class="material-symbols-outlined" style="color: #4b5563; font-size: 1rem;">settings_ethernet</span>`
+      html += `<h4 style="font-weight: 600; font-size: 0.875rem; color: #111827; margin: 0;">${escapeHtml(interfaceName)}</h4>`
+      if (interfaceEntity.fields?.InterfaceStatus) {
+        const statusColor = interfaceEntity.fields.InterfaceStatus === 'ON' ? '#10b981' : '#6b7280'
+        html += `<span style="font-size: 0.625rem; padding: 0.125rem 0.375rem; border-radius: 9999px; background-color: ${statusColor === '#10b981' ? '#d1fae5' : '#f3f4f6'}; color: ${statusColor}; font-weight: 500;">${escapeHtml(interfaceEntity.fields.InterfaceStatus)}</span>`
+      }
+      html += `</div>`
+      if (hasVlans || hasAliases || hasXfrmInterfaces) {
+        html += `<span style="font-size: 0.625rem; color: #6b7280; font-weight: 500;">`
+        html += `${portData.vlans?.length || 0} VLAN${portData.vlans?.length !== 1 ? 's' : ''}, ${portData.aliases?.length || 0} Alias${portData.aliases?.length !== 1 ? 'es' : ''}`
+        if (hasXfrmInterfaces) {
+          html += `, ${portData.xfrmInterfaces?.length || 0} XFRM`
+        }
+        html += `</span>`
+      }
+      html += `</div>`
+      
+      // Interface fields
+      const fields = []
+      if (interfaceEntity.fields?.IPAddress) {
+        const cidr = interfaceEntity.fields.Netmask ? netmaskToCIDR(interfaceEntity.fields.Netmask) : null
+        fields.push(`<div><span style="color: #6b7280; font-weight: 500;">IP:</span> <span style="font-family: monospace; color: #111827;">${escapeHtml(interfaceEntity.fields.IPAddress)}${cidr ? `/${cidr}` : ''}</span></div>`)
+      }
+      if (interfaceEntity.fields?.NetworkZone) {
+        fields.push(`<div><span style="color: #6b7280; font-weight: 500;">Zone:</span> <span style="color: #111827;">${escapeHtml(interfaceEntity.fields.NetworkZone)}</span></div>`)
+      }
+      if (interfaceEntity.fields?.Hardware) {
+        fields.push(`<div><span style="color: #6b7280; font-weight: 500;">Hardware:</span> <span style="color: #111827;">${escapeHtml(interfaceEntity.fields.Hardware)}</span></div>`)
+      }
+      if (interfaceEntity.fields?.InterfaceSpeed) {
+        fields.push(`<div><span style="color: #6b7280; font-weight: 500;">Speed:</span> <span style="color: #111827;">${escapeHtml(interfaceEntity.fields.InterfaceSpeed)}</span></div>`)
+      }
+      if (fields.length > 0) {
+        html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.25rem 0.75rem; font-size: 0.625rem; padding-top: 0.25rem;">${fields.join('')}</div>`
+      }
+      html += `</div>`
+    } else if (hasVlans || hasAliases || hasXfrmInterfaces) {
+      html += `<div style="background: linear-gradient(to right, #eff6ff, #e0e7ff); padding: 0.5rem 0.75rem; border-bottom: 1px solid #e5e7eb;">`
+      html += `<div style="display: flex; align-items: center; justify-content: space-between;">`
+      html += `<div style="display: flex; align-items: center; gap: 0.375rem;">`
+      html += `<span class="material-symbols-outlined" style="color: #4b5563; font-size: 1rem;">settings_ethernet</span>`
+      html += `<h4 style="font-weight: 600; font-size: 0.875rem; color: #111827; margin: 0;">${escapeHtml(interfaceName)}</h4>`
+      html += `</div>`
+      html += `<span style="font-size: 0.625rem; color: #6b7280; font-weight: 500;">`
+      html += `${portData.vlans?.length || 0} VLAN${portData.vlans?.length !== 1 ? 's' : ''}, ${portData.aliases?.length || 0} Alias${portData.aliases?.length !== 1 ? 'es' : ''}`
+      if (hasXfrmInterfaces) {
+        html += `, ${portData.xfrmInterfaces?.length || 0} XFRM`
+      }
+      html += `</span>`
+      html += `</div>`
+      html += `</div>`
+    }
+    
+    // Child interfaces container
+    if (hasVlans || hasAliases || hasXfrmInterfaces) {
+      html += '<div style="padding: 0.5rem 0.75rem;">'
+      
+      // VLANs
+      if (hasVlans) {
+        html += `<div style="margin-bottom: 0.5rem;">`
+        html += `<div style="display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.375rem; margin-left: 0.25rem;">`
+        html += `<span class="material-symbols-outlined" style="color: #4b5563; font-size: 0.75rem;">router</span>`
+        html += `<h5 style="font-size: 0.625rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">VLANs (${portData.vlans.length})</h5>`
+        html += `</div>`
+        html += `<div style="display: flex; flex-direction: column; gap: 0.375rem; margin-left: 1rem;">`
+        portData.vlans.forEach((vlan, idx) => {
+          html += `<div style="background-color: #faf5ff; border-left: 3px solid #a855f7; border-radius: 0 4px 4px 0; padding: 0.375rem;">`
+          html += `<div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.25rem;">`
+          html += `<span style="font-weight: 600; font-size: 0.75rem; color: #111827;">${escapeHtml(vlan.name || `VLAN ${idx + 1}`)}</span>`
+          if (vlan.fields?.VLANID) {
+            html += `<span style="font-size: 0.625rem; padding: 0.125rem 0.25rem; background-color: #e9d5ff; color: #6b21a8; border-radius: 4px; font-family: monospace;">ID: ${escapeHtml(vlan.fields.VLANID)}</span>`
+          }
+          if (vlan.fields?.InterfaceStatus) {
+            const statusColor = vlan.fields.InterfaceStatus === 'ON' ? '#10b981' : '#6b7280'
+            html += `<span style="font-size: 0.625rem; padding: 0.125rem 0.25rem; border-radius: 4px; background-color: ${statusColor === '#10b981' ? '#d1fae5' : '#f3f4f6'}; color: ${statusColor};">${escapeHtml(vlan.fields.InterfaceStatus)}</span>`
+          }
+          html += `</div>`
+          const vlanFields = []
+          if (vlan.fields?.IPAddress) {
+            const cidr = vlan.fields.Netmask ? netmaskToCIDR(vlan.fields.Netmask) : null
+            vlanFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IP:</span> <span style="font-family: monospace; color: #111827;">${escapeHtml(vlan.fields.IPAddress)}${cidr ? `/${cidr}` : ''}</span></div>`)
+          }
+          if (vlan.fields?.Zone) {
+            vlanFields.push(`<div><span style="color: #6b7280; font-weight: 500;">Zone:</span> <span style="color: #111827;">${escapeHtml(vlan.fields.Zone)}</span></div>`)
+          }
+          if (vlanFields.length > 0) {
+            html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.125rem 0.75rem; font-size: 0.625rem;">${vlanFields.join('')}</div>`
+          }
+          html += `</div>`
+        })
+        html += `</div></div>`
+      }
+      
+      // Aliases
+      if (hasAliases) {
+        html += `<div style="margin-bottom: 0.5rem;">`
+        html += `<div style="display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.375rem; margin-left: 0.25rem;">`
+        html += `<span class="material-symbols-outlined" style="color: #4b5563; font-size: 0.75rem;">label</span>`
+        html += `<h5 style="font-size: 0.625rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">Aliases (${portData.aliases.length})</h5>`
+        html += `</div>`
+        html += `<div style="display: flex; flex-direction: column; gap: 0.375rem; margin-left: 1rem;">`
+        portData.aliases.forEach((alias, idx) => {
+          html += `<div style="background-color: #f0fdf4; border-left: 3px solid #22c55e; border-radius: 0 4px 4px 0; padding: 0.375rem;">`
+          html += `<div style="font-weight: 600; font-size: 0.75rem; color: #111827; margin-bottom: 0.25rem;">${escapeHtml(alias.name || `Alias ${idx + 1}`)}</div>`
+          const aliasFields = []
+          if (alias.fields?.IPAddress && (alias.fields?.IPFamily === 'IPv4' || !alias.fields?.IPFamily)) {
+            const cidr = alias.fields.Netmask ? netmaskToCIDR(alias.fields.Netmask) : null
+            aliasFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IPv4:</span> <span style="font-family: monospace; color: #111827;">${escapeHtml(alias.fields.IPAddress)}${cidr ? `/${cidr}` : ''}</span></div>`)
+          }
+          if (alias.fields?.IPv6 || alias.fields?.IPFamily === 'IPv6') {
+            aliasFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IPv6:</span> <span style="font-family: monospace; color: #111827;">${escapeHtml(alias.fields.IPv6 || '')}${alias.fields?.Prefix ? `/${escapeHtml(alias.fields.Prefix)}` : ''}</span></div>`)
+          }
+          if (aliasFields.length > 0) {
+            html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.125rem 0.75rem; font-size: 0.625rem;">${aliasFields.join('')}</div>`
+          }
+          html += `</div>`
+        })
+        html += `</div></div>`
+      }
+      
+      // XFRM Interfaces
+      if (hasXfrmInterfaces) {
+        html += `<div>`
+        html += `<div style="display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.375rem; margin-left: 0.25rem;">`
+        html += `<span class="material-symbols-outlined" style="color: #4b5563; font-size: 0.75rem;">vpn_key</span>`
+        html += `<h5 style="font-size: 0.625rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin: 0;">XFRM Interfaces (${portData.xfrmInterfaces.length})</h5>`
+        html += `</div>`
+        html += `<div style="display: flex; flex-direction: column; gap: 0.375rem; margin-left: 1rem;">`
+        portData.xfrmInterfaces.forEach((xfrm, idx) => {
+          html += `<div style="background-color: #fff7ed; border-left: 3px solid #fb923c; border-radius: 0 4px 4px 0; padding: 0.375rem;">`
+          html += `<div style="display: flex; align-items: center; gap: 0.375rem; margin-bottom: 0.25rem;">`
+          html += `<span style="font-weight: 600; font-size: 0.75rem; color: #111827;">${escapeHtml(xfrm.name || xfrm.fields?.Name || `XFRM ${idx + 1}`)}</span>`
+          if (xfrm.fields?.InterfaceStatus) {
+            const statusColor = xfrm.fields.InterfaceStatus === 'ON' ? '#10b981' : '#6b7280'
+            html += `<span style="font-size: 0.625rem; padding: 0.125rem 0.25rem; border-radius: 4px; background-color: ${statusColor === '#10b981' ? '#d1fae5' : '#f3f4f6'}; color: ${statusColor};">${escapeHtml(xfrm.fields.InterfaceStatus)}</span>`
+          }
+          html += `</div>`
+          const xfrmFields = []
+          if (xfrm.fields?.IPv4Address) {
+            const cidr = xfrm.fields.Netmask ? netmaskToCIDR(xfrm.fields.Netmask) : null
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IPv4:</span> <span style="font-family: monospace; color: #111827;">${escapeHtml(xfrm.fields.IPv4Address)}${cidr ? `/${cidr}` : ''}</span></div>`)
+          }
+          if (xfrm.fields?.Connectionname) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">Connection:</span> <span style="color: #111827;">${escapeHtml(xfrm.fields.Connectionname)}</span></div>`)
+          }
+          if (xfrm.fields?.Hardware) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">Hardware:</span> <span style="font-family: monospace; font-size: 0.625rem; color: #111827;">${escapeHtml(xfrm.fields.Hardware)}</span></div>`)
+          }
+          if (xfrm.fields?.IPv4Configuration) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IPv4 Config:</span> <span style="color: #111827;">${escapeHtml(xfrm.fields.IPv4Configuration)}</span></div>`)
+          }
+          if (xfrm.fields?.IPv6Configuration) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">IPv6 Config:</span> <span style="color: #111827;">${escapeHtml(xfrm.fields.IPv6Configuration)}</span></div>`)
+          }
+          if (xfrm.fields?.MTU) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">MTU:</span> <span style="color: #111827;">${escapeHtml(xfrm.fields.MTU)}</span></div>`)
+          }
+          if (xfrm.fields?.MSS && typeof xfrm.fields.MSS === 'object' && xfrm.fields.MSS?.MSSValue) {
+            xfrmFields.push(`<div><span style="color: #6b7280; font-weight: 500;">MSS:</span> <span style="color: #111827;">${escapeHtml(xfrm.fields.MSS.MSSValue)}</span></div>`)
+          }
+          if (xfrmFields.length > 0) {
+            html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.125rem 0.75rem; font-size: 0.625rem;">${xfrmFields.join('')}</div>`
+          }
+          html += `</div>`
+        })
+        html += `</div></div>`
+      }
+      
+      html += '</div>'
+    }
+    
+    html += '</div>'
+  })
+  
+  html += '</div>'
+  return html
 }
 
 // Generate collapsible section HTML
@@ -572,7 +1099,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         <!-- Basic Information -->
         <div>
           <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-            <span class="material-symbols-outlined" style="font-size: 1rem;">info</span>
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">info</span>
             Basic Information
           </h4>
           <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -589,7 +1116,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         <!-- Action & Traffic Control -->
         <div>
           <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-            <span class="material-symbols-outlined" style="font-size: 1rem;">bolt</span>
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">bolt</span>
             Action & Traffic Control
           </h4>
           <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -604,7 +1131,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         <!-- Source Configuration -->
         <div>
           <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-            <span class="material-symbols-outlined" style="font-size: 1rem; color: #005BC8;">login</span>
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">login</span>
             Source Configuration
           </h4>
           <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -619,7 +1146,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         <!-- Destination Configuration -->
         <div>
           <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-            <span class="material-symbols-outlined" style="font-size: 1rem; color: #16a34a;">logout</span>
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">logout</span>
             Destination Configuration
           </h4>
           <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -635,7 +1162,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         <!-- Security Features -->
         <div>
           <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-            <span class="material-symbols-outlined" style="font-size: 1rem; color: #9333ea;">shield_lock</span>
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">shield_lock</span>
             Security Features
           </h4>
           <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -655,7 +1182,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         ${rule.userPolicy ? `
           <div>
             <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-              <span class="material-symbols-outlined" style="font-size: 1rem; color: #4f46e5;">groups</span>
+              <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">groups</span>
               User Policy Details
             </h4>
             <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
@@ -715,7 +1242,7 @@ function generateFirewallRule(rule, index, isExpanded = false) {
         return `
           <div style="margin-top: 1rem; padding: 0.75rem; background-color: #fefce8; border: 1px solid #fde047; border-radius: 0.375rem;">
             <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
-              <span class="material-symbols-outlined" style="font-size: 1rem; color: #ea580c;">block</span>
+              <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">block</span>
               Exclusions
             </h4>
             <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; font-size: 0.75rem;">
@@ -787,6 +1314,216 @@ function generateFirewallRule(rule, index, isExpanded = false) {
   `
 }
 
+// Generate SSL/TLS Inspection Rule HTML
+function generateSSLTLSInspectionRule(rule, index, isExpanded = false) {
+  const flat = flattenSSLTLSInspectionRule(rule)
+  
+  const statusBadge = flat.enable === 'Yes' 
+    ? '<span style="display: inline-flex; align-items: center; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; background-color: #d1fae5; color: #065f46;">✓ Enabled</span>'
+    : '<span style="display: inline-flex; align-items: center; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; background-color: #f3f4f6; color: #1f2937;">✗ Disabled</span>'
+
+  // Helper function to render a field
+  const renderField = (label, value, highlight = null) => {
+    if (value === null || value === undefined || value === '') return ''
+    const color = highlight === 'green' ? '#15803d' : '#111827'
+    const fontWeight = highlight === 'green' ? '600' : 'normal'
+    return `<tr style="border-bottom: 1px solid #f3f4f6;"><td style="font-size: 0.75rem; font-weight: 500; color: #4b5563; min-width: 180px; max-width: 250px; white-space: nowrap; padding: 0.25rem 0.75rem 0.25rem 0; vertical-align: top;">${escapeHtml(label)}</td><td style="font-size: 0.75rem; color: ${color}; font-weight: ${fontWeight}; padding: 0.25rem 0; vertical-align: top; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(String(value))}</td></tr>`
+  }
+
+  // Always generate the full rule details HTML
+  const ruleDetailsHtml = `
+    <table style="width: 100%; border-collapse: collapse;">
+      <tbody>
+        ${renderField('Transaction ID', rule.transactionId || 'N/A')}
+        ${renderField('Name', flat.name)}
+        ${renderField('Description', flat.description || 'N/A')}
+        ${renderField('Is Default', flat.isDefault || 'No')}
+        ${renderField('Enable', flat.enable || 'No')}
+        ${renderField('Log Connections', flat.logConnections || 'Disable')}
+        ${renderField('Decrypt Action', flat.decryptAction || 'N/A', flat.decryptAction === 'Decrypt' ? 'green' : null)}
+        ${renderField('Decryption Profile', flat.decryptionProfile || 'N/A')}
+        ${flat.moveToName ? renderField('Move To', `${flat.moveToName} (${flat.moveToOrderBy})`) : ''}
+        ${renderField('Source Zones', flat.sourceZones || 'Any')}
+        ${renderField('Source Networks', flat.sourceNetworks || 'Any')}
+        ${renderField('Identity', flat.identity || 'Any')}
+        ${renderField('Destination Zones', flat.destinationZones || 'Any')}
+        ${renderField('Destination Networks', flat.destinationNetworks || 'Any')}
+        ${renderField('Services', flat.services || 'Any')}
+        ${renderField('Websites/Categories', flat.websites || 'Any')}
+      </tbody>
+    </table>
+  `
+
+  return `
+    <div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; margin-bottom: 1rem; background-color: #ffffff;">
+      <div style="padding: 0.625rem; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+          <div style="flex: 1;">
+            <h3 style="font-size: 0.875rem; font-weight: 600; color: #111827; margin: 0 0 0.125rem 0;">
+              Rule #${index + 1}: ${escapeHtml(flat.name || 'Unnamed Rule')}
+            </h3>
+            ${flat.description ? `<p style="font-size: 0.75rem; color: #6b7280; margin: 0;">${escapeHtml(flat.description)}</p>` : ''}
+          </div>
+        </div>
+        <div style="margin-left: 0.75rem;">
+          ${statusBadge}
+        </div>
+      </div>
+      <div style="padding: 0.75rem;">
+${ruleDetailsHtml}
+      </div>
+    </div>
+  `
+}
+
+// Generate NAT Rule HTML
+function generateNATRule(rule, index, isExpanded = false) {
+  const flat = flattenNATRule(rule)
+  const ruleId = `nat-${rule.transactionId || rule.id || index}`
+  
+  const statusBadge = (flat.status === 'Enable' || flat.status === 'Yes' || flat.status === 'ON')
+    ? '<span style="display: inline-flex; align-items: center; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; background-color: #d1fae5; color: #065f46;">✓ Enabled</span>'
+    : '<span style="display: inline-flex; align-items: center; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; background-color: #f3f4f6; color: #1f2937;">✗ Disabled</span>'
+
+  // Helper function to render a field
+  const renderField = (label, value, highlight = null) => {
+    if (value === null || value === undefined || value === '') return ''
+    const color = highlight === 'green' ? '#15803d' : '#111827'
+    const fontWeight = highlight === 'green' ? '600' : 'normal'
+    return `<tr style="border-bottom: 1px solid #f3f4f6;"><td style="font-size: 0.75rem; font-weight: 500; color: #4b5563; min-width: 180px; max-width: 250px; white-space: nowrap; padding: 0.25rem 0.75rem 0.25rem 0; vertical-align: top;">${escapeHtml(label)}</td><td style="font-size: 0.75rem; color: ${color}; font-weight: ${fontWeight}; padding: 0.25rem 0; vertical-align: top; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(String(value))}</td></tr>`
+  }
+
+  // Always generate the full rule details HTML
+  const ruleDetailsHtml = `
+    <div style="padding: 0.75rem; padding-top: 0;">
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+        <!-- Basic Information -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">info</span>
+            Basic Information
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${renderField('Transaction ID', rule.transactionId || 'N/A')}
+              ${renderField('NAT Type', flat.natType || 'N/A')}
+              ${renderField('IP Family', flat.ipFamily || 'N/A')}
+              ${renderField('Position', flat.position || 'N/A')}
+              ${flat.after ? renderField('Positioned After', flat.after) : ''}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Action & Traffic Control -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">bolt</span>
+            Action & Traffic Control
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${renderField('Action', flat.action || 'N/A', flat.action === 'Accept' ? 'green' : null)}
+              ${renderField('Log Traffic', flat.logTraffic || 'Disable')}
+              ${renderField('Schedule', flat.schedule || 'All The Time')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Source Configuration -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">login</span>
+            Source Configuration
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${flat.sourceZones ? renderField('Source Zones', flat.sourceZones) : ''}
+              ${flat.sourceNetworks ? renderField('Source Networks', flat.sourceNetworks) : ''}
+              ${!flat.sourceZones && !flat.sourceNetworks ? renderField('Source', 'Any') : ''}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Destination Configuration -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">logout</span>
+            Destination Configuration
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${flat.destinationZones ? renderField('Destination Zones', flat.destinationZones) : ''}
+              ${flat.destinationNetworks ? renderField('Destination Networks', flat.destinationNetworks) : ''}
+              ${flat.services ? renderField('Services/Ports', flat.services) : ''}
+              ${!flat.destinationZones && !flat.destinationNetworks ? renderField('Destination', 'Any') : ''}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- NAT Translation - Source -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">swap_horiz</span>
+            Source NAT Translation
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${renderField('Original Source', flat.originalSource || 'N/A')}
+              ${renderField('Translated Source', flat.translatedSource || 'N/A')}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- NAT Translation - Destination -->
+        <div>
+          <h4 style="font-weight: 600; color: #111827; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.05em; border-bottom: 1px solid #d1d5db; padding-bottom: 0.25rem; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">
+            <span class="material-symbols-outlined" style="font-size: 1rem; color: #4b5563;">swap_horiz</span>
+            Destination NAT Translation
+          </h4>
+          <table style="width: 100%; border-collapse: collapse; table-layout: auto;">
+            <tbody>
+              ${renderField('Original Destination', flat.originalDestination || 'N/A')}
+              ${renderField('Translated Destination', flat.translatedDestination || 'N/A')}
+              ${flat.originalService ? renderField('Original Service', flat.originalService) : ''}
+              ${flat.translatedService ? renderField('Translated Service', flat.translatedService) : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `
+  
+  return `
+    <div style="margin-bottom: 1rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden;">
+      <button 
+        onclick="toggleRule('${ruleId}')" 
+        id="rule-btn-${ruleId}"
+        style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0.625rem; background: none; border: none; cursor: pointer; text-align: left;"
+        onmouseover="this.style.backgroundColor='#f9fafb'"
+        onmouseout="this.style.backgroundColor='transparent'"
+      >
+        <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="rule-chevron-${ruleId}">
+            <path d="${isExpanded ? 'M6 9l6 6 6-6' : 'M9 18l6-6-6-6'}" />
+          </svg>
+          <div style="flex: 1;">
+            <h3 style="font-size: 0.875rem; font-weight: 700; color: #111827; margin-bottom: 0.125rem;">
+              Rule #${index + 1}: ${escapeHtml(flat.name || 'Unnamed NAT Rule')}
+            </h3>
+            ${flat.description ? `<p style="font-size: 0.75rem; color: #4b5563;">${escapeHtml(flat.description)}</p>` : ''}
+          </div>
+        </div>
+        <div style="margin-left: 0.75rem;">
+          ${statusBadge}
+        </div>
+      </button>
+      <div id="rule-content-${ruleId}" style="display: ${isExpanded ? 'block' : 'none'};">
+        ${ruleDetailsHtml}
+      </div>
+    </div>
+  `
+}
+
 // Main HTML generator function
 export function generateHTMLReport(data, sectionVisibility = {}) {
   if (!data) return ''
@@ -829,13 +1566,13 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
       (sectionVisibility.macHosts !== false && data.macHosts?.length)) {
     let hostObjectsHtml = ''
     if (sectionVisibility.ipHosts !== false && data.ipHosts && data.ipHosts.length > 0) {
-      hostObjectsHtml += `<div id="ip-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('ip-hosts', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('IPHost')};">dns</span> IP Hosts`, generateEntityTable('IP Hosts', 'dns', data.ipHosts, 'IP Address', (item) => item.fields?.IPAddress || ''), true)}</div>`
+      hostObjectsHtml += `<div id="ip-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('ip-hosts', `<span class="material-symbols-outlined" style="color: #4b5563;">dns</span> IP Hosts`, generateEntityTable('IP Hosts', 'dns', data.ipHosts, 'IP Address', (item) => item.fields?.IPAddress || ''), true)}</div>`
     }
     if (sectionVisibility.fqdnHosts !== false && data.fqdnHosts && data.fqdnHosts.length > 0) {
-      hostObjectsHtml += `<div id="fqdn-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('fqdn-hosts', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('FQDNHost')};">language</span> FQDN Hosts`, generateEntityTable('FQDN Hosts', 'language', data.fqdnHosts), true)}</div>`
+      hostObjectsHtml += `<div id="fqdn-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('fqdn-hosts', `<span class="material-symbols-outlined" style="color: #4b5563;">language</span> FQDN Hosts`, generateEntityTable('FQDN Hosts', 'language', data.fqdnHosts), true)}</div>`
     }
     if (sectionVisibility.macHosts !== false && data.macHosts && data.macHosts.length > 0) {
-      hostObjectsHtml += `<div id="mac-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('mac-hosts', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('MACHost')};">devices</span> MAC Hosts`, generateEntityTable('MAC Hosts', 'devices', data.macHosts, 'MAC Address', (item) => item.fields?.MACAddress || ''), true)}</div>`
+      hostObjectsHtml += `<div id="mac-hosts" style="margin-bottom: 1rem;">${generateCollapsibleSection('mac-hosts', `<span class="material-symbols-outlined" style="color: #4b5563;">devices</span> MAC Hosts`, generateEntityTable('MAC Hosts', 'devices', data.macHosts, 'MAC Address', (item) => item.fields?.MACAddress || ''), true)}</div>`
     }
     sectionsHtml += hostObjectsHtml
   }
@@ -843,7 +1580,19 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
   // Firewall Rules
   if (sectionVisibility.firewallRules !== false && data.firewallRules && data.firewallRules.length > 0) {
     const rulesHtml = data.firewallRules.map((rule, idx) => generateFirewallRule(rule, idx, false)).join('')
-    sectionsHtml += `<div id="firewall-rules" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('firewall-rules', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('FirewallRule')};">shield</span> Detailed Firewall Rules Analysis`, `<div style="display: flex; flex-direction: column; gap: 1rem;">${rulesHtml}</div>`, true)}</div>`
+    sectionsHtml += `<div id="firewall-rules" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('firewall-rules', `<span class="material-symbols-outlined" style="color: #4b5563;">shield</span> Firewall Rules`, `<div style="display: flex; flex-direction: column; gap: 1rem;">${rulesHtml}</div>`, true)}</div>`
+  }
+
+  // SSL/TLS Inspection Rules
+  if (sectionVisibility.sslTlsInspectionRules !== false && data.sslTlsInspectionRules && data.sslTlsInspectionRules.length > 0) {
+    const sslRulesHtml = data.sslTlsInspectionRules.map((rule, idx) => generateSSLTLSInspectionRule(rule, idx, false)).join('')
+    sectionsHtml += `<div id="ssl-tls-inspection-rules" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('ssl-tls-inspection-rules', `<span class="material-symbols-outlined" style="color: #4b5563;">lock</span> SSL/TLS Inspection Rules (${data.sslTlsInspectionRules.length})`, `<div style="display: flex; flex-direction: column; gap: 1rem;">${sslRulesHtml}</div>`, true)}</div>`
+  }
+
+  // NAT Rules
+  if (sectionVisibility.NATRule !== false && data.entitiesByTag?.NATRule && data.entitiesByTag.NATRule.length > 0) {
+    const natRulesHtml = data.entitiesByTag.NATRule.map((rule, idx) => generateNATRule(rule, idx, false)).join('')
+    sectionsHtml += `<div id="nat-rules" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('nat-rules', `<span class="material-symbols-outlined" style="color: #4b5563;">swap_horiz</span> NAT Rules (${data.entitiesByTag.NATRule.length})`, `<div style="display: flex; flex-direction: column; gap: 1rem;">${natRulesHtml}</div>`, true)}</div>`
   }
 
   // Groups Section
@@ -853,23 +1602,23 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
       (sectionVisibility.groups !== false && data.groups?.length)) {
     let groupsHtml = ''
     if (sectionVisibility.fqdnHostGroups !== false && data.fqdnHostGroups && data.fqdnHostGroups.length > 0) {
-      groupsHtml += `<div id="fqdn-host-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('fqdn-host-groups', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('FQDNHostGroup')};">group_work</span> FQDN Host Groups`, generateEntityTable('FQDN Host Groups', 'group_work', data.fqdnHostGroups), true)}</div>`
+      groupsHtml += `<div id="fqdn-host-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('fqdn-host-groups', `<span class="material-symbols-outlined" style="color: #4b5563;">group_work</span> FQDN Host Groups`, generateEntityTable('FQDN Host Groups', 'group_work', data.fqdnHostGroups), true)}</div>`
     }
     if (sectionVisibility.ipHostGroups !== false && data.ipHostGroups && data.ipHostGroups.length > 0) {
-      groupsHtml += `<div id="ip-host-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('ip-host-groups', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('IPHostGroup')};">group_work</span> IP Host Groups`, generateEntityTable('IP Host Groups', 'group_work', data.ipHostGroups), true)}</div>`
+      groupsHtml += `<div id="ip-host-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('ip-host-groups', `<span class="material-symbols-outlined" style="color: #4b5563;">group_work</span> IP Host Groups`, generateEntityTable('IP Host Groups', 'group_work', data.ipHostGroups), true)}</div>`
     }
     if (sectionVisibility.serviceGroups !== false && data.serviceGroups && data.serviceGroups.length > 0) {
-      groupsHtml += `<div id="service-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('service-groups', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('ServiceGroup')};">group_work</span> Service Groups`, generateEntityTable('Service Groups', 'group_work', data.serviceGroups), true)}</div>`
+      groupsHtml += `<div id="service-groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('service-groups', `<span class="material-symbols-outlined" style="color: #4b5563;">group_work</span> Service Groups`, generateEntityTable('Service Groups', 'group_work', data.serviceGroups), true)}</div>`
     }
     if (sectionVisibility.groups !== false && data.groups && data.groups.length > 0) {
-      groupsHtml += `<div id="groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('groups', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('Group')};">groups</span> Other Groups`, generateEntityTable('Other Groups', 'groups', data.groups), true)}</div>`
+      groupsHtml += `<div id="groups" style="margin-bottom: 1rem;">${generateCollapsibleSection('groups', `<span class="material-symbols-outlined" style="color: #4b5563;">groups</span> Other Groups`, generateEntityTable('Other Groups', 'groups', data.groups), true)}</div>`
     }
     sectionsHtml += groupsHtml
   }
 
-  // Services
+  // Services - use dedicated Services table generator to match ReportView.jsx format
   if (sectionVisibility.services !== false && data.services && data.services.length > 0) {
-    sectionsHtml += `<div id="services-section" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('services-section', '<span class="material-symbols-outlined" style="color: #005BC8;">construction</span> Services', generateEntityTable('Services', 'construction', data.services), true)}</div>`
+    sectionsHtml += `<div id="services-section" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('services-section', '<span class="material-symbols-outlined" style="color: #4b5563;">construction</span> Services', generateServicesTable(data.services), true)}</div>`
   }
 
   // Additional dynamic entities
@@ -877,15 +1626,14 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     Object.entries(data.entitiesByTag).forEach(([tag, items]) => {
       if (items && items.length > 0 && sectionVisibility[tag] !== false) {
         if (!['IPHost', 'FQDNHost', 'MACHost', 'Service', 'Services', 'Group', 'FQDNHostGroup', 'IPHostGroup', 'ServiceGroup',
-              'Country', 'WebFilterPolicy', 'Schedule', 'VLAN', 'Alias', 'Interface', 'LAG', 'WirelessNetwork',
+              'Country', 'WebFilterPolicy', 'Schedule', 'VLAN', 'Alias', 'Interface', 'LAG', 'WirelessNetwork', 'XFRMInterface',
               'CertificateAuthority', 'SelfSignedCertificate', 'Certificate', 'Zone', 'Network', 'REDDevice', 'WirelessAccessPoint',
-              'IPSPolicy', 'IntrusionPrevention', 'VirusScanning', 'WebFilter'].includes(tag)) {
+              'IPSPolicy', 'IntrusionPrevention', 'VirusScanning', 'WebFilter', 'NATRule'].includes(tag)) {
           const icon = getEntityIcon(tag)
-          const iconColor = getEntityIconColor(tag)
           const tableHtml = tag === 'VPNIPSecConnection' 
             ? generateVPNIPSecConnectionTable(items)
             : generateEntityTable(tag, icon, items)
-          sectionsHtml += `<div id="additional-${tag}" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection(`additional-${tag}`, `<span class="material-symbols-outlined" style="color: ${iconColor};">${icon}</span> ${escapeHtml(tag)} (${items.length})`, tableHtml, true)}</div>`
+          sectionsHtml += `<div id="additional-${tag}" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection(`additional-${tag}`, `<span class="material-symbols-outlined" style="color: #4b5563;">${icon}</span> ${escapeHtml(tag)} (${items.length})`, tableHtml, true)}</div>`
         }
       }
     })
@@ -898,9 +1646,8 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     (data.lagsWithMembers && Object.keys(data.lagsWithMembers).length > 0) ||
     (data.entitiesByTag?.WirelessNetwork?.length > 0)
   )) {
-    // Note: Interfaces & Network is complex - for now, just show a placeholder
-    // This can be enhanced later with full interface/VLAN/Alias rendering
-    sectionsHtml += `<div id="ports-vlans-aliases" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('ports-vlans-aliases', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('Interface')};">settings_ethernet</span> Interfaces & Network`, '<p style="padding: 1rem; color: #6b7280;">Interfaces and network configuration details</p>', true)}</div>`
+    const interfacesHtml = generateInterfacesSection(data)
+    sectionsHtml += `<div id="ports-vlans-aliases" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('ports-vlans-aliases', `<span class="material-symbols-outlined" style="color: #4b5563;">settings_ethernet</span> Interfaces & Network`, interfacesHtml, true)}</div>`
   }
 
   // Security Policies
@@ -927,7 +1674,7 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     securityPoliciesHtml.push(generateEntityTable('Web Filters', 'web', data.entitiesByTag.WebFilter || []))
   }
   if (securityPoliciesHtml.length > 0) {
-    sectionsHtml += `<div id="security-policies" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('security-policies', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('IPSPolicy')};">security</span> Security Policies`, securityPoliciesHtml.join(''), true)}</div>`
+    sectionsHtml += `<div id="security-policies" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('security-policies', `<span class="material-symbols-outlined" style="color: #4b5563;">security</span> Security Policies`, securityPoliciesHtml.join(''), true)}</div>`
   }
 
   // Certificates
@@ -942,7 +1689,7 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     certificatesHtml.push(generateEntityTable('Certificates', 'verified', data.entitiesByTag.Certificate || []))
   }
   if (certificatesHtml.length > 0) {
-    sectionsHtml += `<div id="certificates" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('certificates', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('Certificate')};">verified</span> Certificates`, certificatesHtml.join(''), true)}</div>`
+    sectionsHtml += `<div id="certificates" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('certificates', `<span class="material-symbols-outlined" style="color: #4b5563;">verified</span> Certificates`, certificatesHtml.join(''), true)}</div>`
   }
 
   // Network Configuration
@@ -960,7 +1707,7 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     networkConfigHtml.push(generateEntityTable('Wireless Access Points', 'wifi', data.entitiesByTag.WirelessAccessPoint || []))
   }
   if (networkConfigHtml.length > 0) {
-    sectionsHtml += `<div id="network-config" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('network-config', `<span class="material-symbols-outlined" style="color: ${getEntityIconColor('Network')};">router</span> Network Configuration`, networkConfigHtml.join(''), true)}</div>`
+    sectionsHtml += `<div id="network-config" style="margin-bottom: 1rem; scroll-mt-4;">${generateCollapsibleSection('network-config', `<span class="material-symbols-outlined" style="color: #4b5563;">router</span> Network Configuration`, networkConfigHtml.join(''), true)}</div>`
   }
 
   // Build sidebar HTML - matching ReportView.jsx structure exactly
@@ -994,6 +1741,11 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
   // === SECTION 3: FIREWALL RULES ===
   if (filteredRules.length > 0) {
     allSections.push({ key: 'firewallRules', name: 'Firewall Rules', icon: 'shield', count: filteredRules.length })
+  }
+  
+  // === SECTION 3.5: NAT RULES ===
+  if (data.entitiesByTag?.NATRule?.length > 0) {
+    allSections.push({ key: 'NATRule', name: 'NAT Rules', icon: 'swap_horiz', count: data.entitiesByTag.NATRule.length })
   }
   
   // === SECTION 4: GROUPS ===
@@ -1041,9 +1793,9 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
     Object.entries(data.entitiesByTag).forEach(([tag, items]) => {
       if (items && items.length > 0 && ![
         'IPHost','FQDNHost','MACHost','Service','Services','Group','FQDNHostGroup','IPHostGroup','ServiceGroup',
-        'Country','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork',
+        'Country','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork','XFRMInterface',
         'CertificateAuthority','SelfSignedCertificate','Certificate','Zone','Network','REDDevice','WirelessAccessPoint',
-        'IPSPolicy','IntrusionPrevention','VirusScanning','WebFilter'
+        'IPSPolicy','IntrusionPrevention','VirusScanning','WebFilter','NATRule'
       ].includes(tag)) {
         allSections.push({ key: tag, name: tag, icon: getEntityIcon(tag), count: items.length })
       }
@@ -1120,8 +1872,31 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Firewall Configuration Report</title>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <!-- Fonts are bundled locally - no external dependencies -->
   <style>
+    /* Local Material Symbols Font */
+    @font-face {
+      font-family: 'Material Symbols Outlined';
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url('./fonts/MaterialSymbolsOutlined.woff2') format('woff2');
+    }
+    .material-symbols-outlined {
+      font-family: 'Material Symbols Outlined';
+      font-weight: normal;
+      font-style: normal;
+      font-size: 24px;
+      line-height: 1;
+      letter-spacing: normal;
+      text-transform: none;
+      display: inline-block;
+      white-space: nowrap;
+      word-wrap: normal;
+      direction: ltr;
+      -webkit-font-feature-settings: 'liga';
+      -webkit-font-smoothing: antialiased;
+    }
     * {
       box-sizing: border-box;
       margin: 0;
@@ -1286,6 +2061,7 @@ export function generateHTMLReport(data, sectionVisibility = {}) {
       'macHosts': 'mac-hosts',
       'portsWithVlans': 'ports-vlans-aliases',
       'firewallRules': 'firewall-rules',
+      'NATRule': 'nat-rules',
       'fqdnHostGroups': 'fqdn-host-groups',
       'ipHostGroups': 'ip-host-groups',
       'serviceGroups': 'service-groups',

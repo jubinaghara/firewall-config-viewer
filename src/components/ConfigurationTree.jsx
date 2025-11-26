@@ -219,7 +219,7 @@ function ConfigurationTree({ xmlContent, onClose, onLoadingChange }) {
   // Handle HTML export
   const handleExportHTML = () => {
     if (!referenceTree || Object.keys(referenceTree).length === 0) {
-      alert('No configuration tree data available to export')
+      alert('No usage reference data available to export')
       return
     }
 
@@ -269,7 +269,7 @@ function ConfigurationTree({ xmlContent, onClose, onLoadingChange }) {
           )}
           <Network className="w-6 h-6" style={{ color: theme.colors.primary.main }} />
           <h2 className="text-xl font-bold" style={{ color: theme.colors.text.heading }}>
-            Configuration Tree
+            Usage reference
           </h2>
         </div>
         <div className="flex items-center gap-2">
@@ -374,7 +374,7 @@ function ConfigurationTree({ xmlContent, onClose, onLoadingChange }) {
           <div className="text-center">
             <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin" style={{ color: theme.colors.primary.main }} />
             <p className="text-lg font-medium mb-2" style={{ color: theme.colors.text.heading }}>
-              Building Configuration Tree
+              Building usage references
             </p>
             <p className="text-sm" style={{ color: theme.colors.text.secondary }}>
               Analyzing entity references...

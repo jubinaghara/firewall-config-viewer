@@ -6,13 +6,18 @@ Remove-Item -Recurse -Force "$env:LOCALAPPDATA\electron-builder\Cache" -ErrorAct
 rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache"
 rmdir /s /q dist
 rmdir /s /q release
-
+rmdir /s /q "%LOCALAPPDATA%\electron-builder\Cache"
 
 npm run sbom:cyclonedx
 
 
 npm run electron:build:win:installer
 
+
+
+C:\Users\jubin.aghara\AppData\Local\electron-builder
+
+Delete entire cache folders
 
 complete clean up
 

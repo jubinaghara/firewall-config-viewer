@@ -41,7 +41,7 @@ export function generateConfigTreeHTML(referenceTree, selectedEntity = null) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Configuration Tree Report</title>
+  <title>Usage reference report</title>
   <style>
     * {
       box-sizing: border-box;
@@ -68,45 +68,43 @@ export function generateConfigTreeHTML(referenceTree, selectedEntity = null) {
       max-height: calc(100vh - 2rem);
     }
     .report-header {
-      padding: 1.5rem 2rem;
-      border-bottom: 1px solid #e5e7eb;
-      background: linear-gradient(180deg, #0049BD 0%, #002157 100%);
-      color: #ffffff;
+      padding: 1.5rem 1.5rem 1rem;
+      border-bottom: 2px solid #005BC8;
+      margin-bottom: 1.5rem;
       flex-shrink: 0;
     }
     .report-header h1 {
-      font-size: 1.5rem;
+      font-size: 1.875rem;
       font-weight: 700;
-      margin-bottom: 0.5rem;
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
+      color: #111827;
+      margin-bottom: 0.25rem;
     }
     .report-header p {
-      font-size: 0.875rem;
-      opacity: 0.9;
+      font-size: 1rem;
+      color: #4b5563;
+      margin-top: 0.25rem;
     }
     .stats {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-      padding: 1rem 2rem;
-      background-color: #f9fafb;
-      border-bottom: 1px solid #e5e7eb;
-      flex-shrink: 0;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      margin-top: 1rem;
     }
-    .stat-item {
-      text-align: center;
+    .stat-box {
+      background-color: #f9fafb;
+      padding: 0.5rem;
+      border-radius: 0.25rem;
+      border: 1px solid #e5e7eb;
     }
     .stat-value {
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: #0049BD;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #111827;
     }
     .stat-label {
-      font-size: 0.875rem;
+      font-size: 0.75rem;
       color: #6b7280;
-      margin-top: 0.25rem;
+      margin-bottom: 0.125rem;
     }
     .search-section {
       padding: 1rem 2rem;
@@ -332,28 +330,36 @@ export function generateConfigTreeHTML(referenceTree, selectedEntity = null) {
 <body>
   <div class="report-container">
     <div class="report-header">
-      <h1>
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-          <path d="M2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
-        Configuration Tree Report
-      </h1>
-      <p>Generated on ${new Date().toLocaleString()}</p>
-    </div>
-    
-    <div class="stats">
-      <div class="stat-item">
-        <div class="stat-value">${allEntities.length}</div>
-        <div class="stat-label">Entities with References</div>
+      <div style="display: flex; align-items: center; justify-content: space-between;">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div style="padding: 0.75rem; border-radius: 0.5rem; background-color: #005BC8; min-width: 48px; min-height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+            <svg width="28" height="28" viewBox="0 0 65 65" xmlns="http://www.w3.org/2000/svg" style="display: block;">
+              <path fill="#fff" d="M.24,10.78v25.07c0,4.25,2.3,8.16,6.02,10.22l26.1,14.48.17.09,26.22-14.57c3.71-2.06,6.01-5.97,6.01-10.22V10.78H.24ZM42.23,40.48c-1.94,1.08-4.14,1.65-6.36,1.64l-24.2-.07,13.57-7.57c1.31-.73,2.79-1.12,4.29-1.12l25.62-.08-12.91,7.2ZM41.86,28.09c-1.31.73-2.79,1.12-4.29,1.12l-25.62.08,12.91-7.2c1.94-1.08,4.14-1.65,6.36-1.64l24.2.07-13.57,7.57Z"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Usage reference report</h1>
+            <p style="font-size: 1rem; color: #4b5563; margin-top: 0.25rem;">Entity Reference Documentation</p>
+          </div>
+        </div>
       </div>
-      <div class="stat-item">
-        <div class="stat-value">${totalReferences}</div>
-        <div class="stat-label">Total References</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-value">${uniqueTags}</div>
-        <div class="stat-label">Entity Types</div>
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-label">Report Generated</div>
+          <div class="stat-value">${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Entities with References</div>
+          <div class="stat-value">${allEntities.length.toLocaleString()}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Total References</div>
+          <div class="stat-value">${totalReferences.toLocaleString()}</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Entity Types</div>
+          <div class="stat-value">${uniqueTags}</div>
+        </div>
       </div>
     </div>
 
@@ -629,7 +635,7 @@ function generateEmptyHTML() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Configuration Tree Report</title>
+  <title>Usage reference report</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -648,7 +654,7 @@ function generateEmptyHTML() {
 </head>
 <body>
   <div class="empty-message">
-    <h1>No Configuration Tree Data</h1>
+    <h1>No usage refreence data</h1>
     <p>No entities with references found in the configuration.</p>
   </div>
 </body>

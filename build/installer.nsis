@@ -1,0 +1,20 @@
+; build/installer.nsis – final working version
+
+; Force correct application icon (installer + uninstaller)
+!ifdef MUI_ICON
+  Icon "${MUI_ICON}"
+!endif
+!ifdef MUI_UNICON
+  UninstallIcon "${MUI_UNICON}"
+!endif
+
+; Force correct icon for shortcuts and taskbar (this is the missing piece)
+!ifdef APP_64
+  !system '"${NSISDIR}\Bin\ResourceHacker.exe" -open "${APP_64}" -save "${APP_64}" -action addoverwrite -res "build\icon.ico" -mask ICONGROUP,1,' 2>nul
+  !system '"${NSISDIR}\Bin\ResourceHacker.exe" -open "${APP_64}" -save "${APP_64}" -action addoverwrite -res "build\icon.ico" -mask ICONGROUP,2,' 2>nul
+!endif
+
+RequestExecutionLevel user
+
+Section -Post
+SectionEnd

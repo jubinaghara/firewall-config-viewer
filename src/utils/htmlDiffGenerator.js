@@ -406,72 +406,484 @@ export function generateHTMLDiff(diffResults, oldFileName, newFileName) {
     `
   }
 
-  // Compare arrays helper
-  const compareArrays = (oldArr, newArr) => {
-    if (!Array.isArray(oldArr) && !Array.isArray(newArr)) return null
-    const old = Array.isArray(oldArr) ? oldArr : []
-    const new_ = Array.isArray(newArr) ? newArr : []
-    
-    const oldSet = new Set(old)
-    const newSet = new Set(new_)
-    
-    return { 
-      removed: old.filter(item => !newSet.has(item)),
-      added: new_.filter(item => !oldSet.has(item)),
-      unchanged: old.filter(item => newSet.has(item))
+  // Deep comparison helper - accurately compares values including nested structures (same as DiffView.jsx)
+  const deepCompareValues = (oldValue, newValue) => {
+    // Handle null/undefined
+    if (oldValue === null || oldValue === undefined) {
+      if (newValue === null || newValue === undefined) return { type: 'unchanged' }
+      return { type: 'added', oldValue: null, newValue }
     }
-  }
+    if (newValue === null || newValue === undefined) {
+      return { type: 'removed', oldValue, newValue: null }
+    }
 
-  // Render field with diff highlighting
-  const renderFieldWithDiffHtml = (label, oldValue, newValue) => {
-    let displayValue = ''
-    const color = '#374151' // gray-700 - always use neutral gray, no highlighting
-    
-    // Check if both are arrays
-    const isOldArray = Array.isArray(oldValue)
-    const isNewArray = Array.isArray(newValue)
-    
-    if (isOldArray || isNewArray) {
-      const oldArr = isOldArray ? oldValue : []
-      const newArr = isNewArray ? newValue : []
+    // Handle arrays
+    if (Array.isArray(oldValue) || Array.isArray(newValue)) {
+      const oldArr = Array.isArray(oldValue) ? oldValue : []
+      const newArr = Array.isArray(newValue) ? newValue : []
       
       // Check if arrays contain objects
-      const checkArray = newArr.length > 0 ? newArr : oldArr
-      const containsObjects = checkArray.length > 0 && typeof checkArray[0] === 'object' && checkArray[0] !== null && !Array.isArray(checkArray[0])
+      const oldHasObjects = oldArr.length > 0 && typeof oldArr[0] === 'object' && oldArr[0] !== null && !Array.isArray(oldArr[0])
+      const newHasObjects = newArr.length > 0 && typeof newArr[0] === 'object' && newArr[0] !== null && !Array.isArray(newArr[0])
       
-      if (containsObjects) {
-        // Array of objects - format the entire array, no highlighting
-        const displayVal = newValue !== undefined ? newValue : oldValue
-        displayValue = escapeHtml(formatNestedValue(displayVal))
+      if (oldHasObjects || newHasObjects) {
+        // Array of objects - compare by content, not just index
+        const oldItemMap = new Map()
+        const newItemMap = new Map()
+        
+        // Index old items by their JSON signature
+        oldArr.forEach((item, idx) => {
+          const signature = JSON.stringify(item)
+          if (!oldItemMap.has(signature)) {
+            oldItemMap.set(signature, [])
+          }
+          oldItemMap.get(signature).push({ item, originalIndex: idx })
+        })
+        
+        // Index new items by their JSON signature
+        newArr.forEach((item, idx) => {
+          const signature = JSON.stringify(item)
+          if (!newItemMap.has(signature)) {
+            newItemMap.set(signature, [])
+          }
+          newItemMap.get(signature).push({ item, originalIndex: idx })
+        })
+        
+        // Track which items have been matched
+        const oldMatched = new Set()
+        const newMatched = new Set()
+        const items = []
+        
+        // First pass: find exact matches (unchanged items)
+        oldItemMap.forEach((oldEntries, signature) => {
+          if (newItemMap.has(signature)) {
+            const newEntries = newItemMap.get(signature)
+            const minCount = Math.min(oldEntries.length, newEntries.length)
+            for (let i = 0; i < minCount; i++) {
+              const oldEntry = oldEntries[i]
+              const newEntry = newEntries[i]
+              oldMatched.add(oldEntry.originalIndex)
+              newMatched.add(newEntry.originalIndex)
+              items.push({
+                index: items.length,
+                type: 'unchanged',
+                oldItem: oldEntry.item,
+                newItem: newEntry.item,
+                oldIndex: oldEntry.originalIndex,
+                newIndex: newEntry.originalIndex
+              })
+            }
+          }
+        })
+        
+        // Second pass: find modified items
+        const maxLen = Math.max(oldArr.length, newArr.length)
+        for (let i = 0; i < maxLen; i++) {
+          const oldItem = oldArr[i]
+          const newItem = newArr[i]
+          
+          if (oldItem !== undefined && newItem !== undefined && 
+              !oldMatched.has(i) && !newMatched.has(i)) {
+            const oldStr = JSON.stringify(oldItem)
+            const newStr = JSON.stringify(newItem)
+            if (oldStr !== newStr) {
+              const oldKeys = Object.keys(oldItem)
+              const newKeys = Object.keys(newItem)
+              const sharedKeys = oldKeys.filter(k => newKeys.includes(k))
+              
+              if (sharedKeys.length > 0) {
+                oldMatched.add(i)
+                newMatched.add(i)
+                items.push({
+                  index: items.length,
+                  type: 'modified',
+                  oldItem,
+                  newItem,
+                  oldIndex: i,
+                  newIndex: i
+                })
+              }
+            }
+          }
+        }
+        
+        // Third pass: identify remaining items as added or removed
+        oldArr.forEach((oldItem, idx) => {
+          if (!oldMatched.has(idx)) {
+            items.push({
+              index: items.length,
+              type: 'removed',
+              oldItem,
+              newItem: null,
+              oldIndex: idx,
+              newIndex: null
+            })
+          }
+        })
+        
+        newArr.forEach((newItem, idx) => {
+          if (!newMatched.has(idx)) {
+            items.push({
+              index: items.length,
+              type: 'added',
+              oldItem: null,
+              newItem,
+              oldIndex: null,
+              newIndex: idx
+            })
+          }
+        })
+        
+        const hasChanges = items.some(item => item.type !== 'unchanged')
+    return { 
+          type: hasChanges ? 'modified' : 'unchanged',
+          oldValue,
+          newValue,
+          items,
+          isArrayOfObjects: true
+        }
       } else {
-        // Simple array (primitives) - just show the new array values, no highlighting
-        const value = newValue !== undefined ? newValue : oldValue
-        displayValue = escapeHtml(renderFieldValue(value))
+        // Simple array - compare sets (order-independent)
+        const oldSet = new Set(oldArr.map(v => String(v)))
+        const newSet = new Set(newArr.map(v => String(v)))
+        
+        const removed = oldArr.filter(v => !newSet.has(String(v)))
+        const added = newArr.filter(v => !oldSet.has(String(v)))
+        const unchanged = oldArr.filter(v => newSet.has(String(v)))
+        
+        if (removed.length === 0 && added.length === 0) {
+          return { type: 'unchanged', oldValue, newValue }
+        }
+        
+        return {
+          type: 'modified',
+          oldValue,
+          newValue,
+          removed,
+          added,
+          unchanged,
+          isSimpleArray: true
+        }
       }
-    } else if (typeof oldValue === 'object' && oldValue !== null && !Array.isArray(oldValue) &&
-               typeof newValue === 'object' && newValue !== null && !Array.isArray(newValue)) {
-      // Both are objects - format the entire object, no highlighting
-      const displayVal = newValue !== undefined ? newValue : oldValue
-      displayValue = escapeHtml(formatNestedValue(displayVal))
+    }
+
+    // Handle objects
+    if (typeof oldValue === 'object' && oldValue !== null && typeof newValue === 'object' && newValue !== null) {
+      const oldKeys = Object.keys(oldValue)
+      const newKeys = Object.keys(newValue)
+      const allKeys = new Set([...oldKeys, ...newKeys])
+      
+      const fields = {}
+      let hasChanges = false
+      
+      allKeys.forEach(key => {
+        const fieldDiff = deepCompareValues(oldValue[key], newValue[key])
+        if (fieldDiff.type !== 'unchanged') hasChanges = true
+        fields[key] = fieldDiff
+      })
+      
+      return {
+        type: hasChanges ? 'modified' : 'unchanged',
+        oldValue,
+        newValue,
+        fields,
+        isObject: true
+      }
+    }
+
+    // Handle primitive values
+    if (String(oldValue) === String(newValue)) {
+      return { type: 'unchanged', oldValue, newValue }
+    }
+    
+    return { type: 'modified', oldValue, newValue }
+  }
+
+  // Render field with diff highlighting (for NEW view - shows GREEN for added, YELLOW for modified)
+  const renderFieldWithDiffHtml = (label, oldValue, newValue, isOldView = false) => {
+    if (oldValue === undefined && newValue === undefined) return ''
+    
+    // If there's no comparison value, just render normally without highlighting
+    // This happens for newly added or removed entities where there's no old/new comparison
+    if ((isOldView && newValue === undefined) || (!isOldView && oldValue === undefined)) {
+      // No comparison - just render the value normally
+      const value = isOldView ? oldValue : newValue
+      let displayValue = ''
+      
+      if (Array.isArray(value)) {
+        if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
+          displayValue = formatNestedValue(value)
+        } else {
+          displayValue = value.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              return formatNestedValue([v])
+            }
+            return String(v)
+          }).join(', ')
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        displayValue = formatNestedValue(value)
+      } else {
+        displayValue = String(value || '')
+      }
+      
+      return `
+        <div style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.375rem 0; border-bottom: 1px solid #f3f4f6;">
+          <span style="font-size: 0.75rem; font-weight: 600; color: #4b5563; width: 10rem; flex-shrink: 0;">${escapeHtml(label)}:</span>
+          <span style="font-size: 0.875rem; flex: 1; color: #374151; word-wrap: break-word; overflow-wrap: anywhere;">${escapeHtml(displayValue) || '<span style="color: #9ca3af; font-style: italic;">(empty)</span>'}</span>
+        </div>
+      `
+    }
+    
+    // Perform deep comparison only when we have both old and new values
+    const diff = deepCompareValues(oldValue, newValue)
+    
+    // Helper to render highlighted span
+    const renderHighlightedSpan = (text, type) => {
+      let color = '#374151' // gray-700
+      let bgColor = 'transparent'
+      let fontWeight = 'normal'
+      let padding = '0'
+      let borderRadius = '0'
+      
+      if (type === 'added') {
+        color = '#15803d' // green-700
+        bgColor = '#f0fdf4' // green-50
+        fontWeight = '600'
+        padding = '0.125rem 0.25rem'
+        borderRadius = '0.25rem'
+      } else if (type === 'removed') {
+        color = '#dc2626' // red-700
+        bgColor = '#fef2f2' // red-50
+        fontWeight = '600'
+        padding = '0.125rem 0.25rem'
+        borderRadius = '0.25rem'
+      } else if (type === 'modified') {
+        color = '#a16207' // yellow-700
+        bgColor = '#fef9c3' // yellow-50
+        fontWeight = '600'
+        padding = '0.125rem 0.25rem'
+        borderRadius = '0.25rem'
+      }
+      
+      return `<span style="color: ${color}; background-color: ${bgColor}; font-weight: ${fontWeight}; padding: ${padding}; border-radius: ${borderRadius};">${escapeHtml(text)}</span>`
+    }
+    
+    let displayValue = ''
+    
+    // Handle simple arrays with diff highlighting
+    if (diff.isSimpleArray && diff.type !== 'unchanged') {
+      const parts = []
+      
+      // Unchanged items
+      if (diff.unchanged && diff.unchanged.length > 0) {
+        parts.push(escapeHtml(diff.unchanged.join(', ')))
+        if ((diff.removed.length > 0 || diff.added.length > 0)) {
+          parts.push(', ')
+        }
+      }
+      
+      // Removed items (RED) - only in OLD view
+      if (isOldView && diff.removed && diff.removed.length > 0) {
+        parts.push(renderHighlightedSpan(diff.removed.join(', '), 'removed'))
+        if (diff.added.length > 0) {
+          parts.push(', ')
+        }
+      }
+      
+      // Added items (GREEN) - only in NEW view
+      if (!isOldView && diff.added && diff.added.length > 0) {
+        parts.push(renderHighlightedSpan(diff.added.join(', '), 'added'))
+      }
+      
+      displayValue = parts.join('')
+    }
+    // Handle array of objects with diff highlighting
+    else if (diff.isArrayOfObjects && diff.items) {
+      const parts = []
+      diff.items.forEach((item, idx) => {
+        if (idx > 0) {
+          parts.push(' | ')
+        }
+        
+        if (item.type === 'added' && !isOldView) {
+          // Added item - GREEN (NEW view only)
+          const formattedItem = formatNestedValue([item.newItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(renderHighlightedSpan(`[${item.index + 1}] ${itemText}`, 'added'))
+        } else if (item.type === 'removed' && isOldView) {
+          // Removed item - RED (OLD view only)
+          const formattedItem = formatNestedValue([item.oldItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(renderHighlightedSpan(`[${item.index + 1}] ${itemText}`, 'removed'))
+        } else if (item.type === 'modified') {
+          // Modified item - YELLOW
+          const formattedItem = formatNestedValue([isOldView ? item.oldItem : item.newItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(renderHighlightedSpan(`[${item.index + 1}] ${itemText}`, 'modified'))
+        } else if (item.type === 'unchanged') {
+          // Unchanged item - normal color
+          const formattedItem = formatNestedValue([item.newItem || item.oldItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(`<span style="color: #374151;">[${item.index + 1}] ${escapeHtml(itemText)}</span>`)
+        }
+      })
+      
+      displayValue = parts.join('')
+    }
+    // Handle nested objects with diff highlighting
+    else if (diff.isObject && diff.fields) {
+      const parts = []
+      Object.entries(diff.fields).forEach(([key, fieldDiff]) => {
+        const formattedKey = key.replace(/([A-Z])/g, ' $1').trim()
+        let nestedDisplay = ''
+        
+        if (fieldDiff.type === 'added' && !isOldView) {
+          if (Array.isArray(fieldDiff.newValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.newValue) ? fieldDiff.newValue.join(', ') : ''
+      } else {
+            nestedDisplay = String(fieldDiff.newValue || '')
+          }
+          parts.push(`<div style="margin-bottom: 0.25rem;"><span style="font-size: 0.75rem; font-weight: 600; color: #4b5563;">${escapeHtml(formattedKey)}: </span>${renderHighlightedSpan(nestedDisplay, 'added')}</div>`)
+        } else if (fieldDiff.type === 'removed' && isOldView) {
+          if (Array.isArray(fieldDiff.oldValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.oldValue) ? fieldDiff.oldValue.join(', ') : ''
     } else {
-      // Regular field (primitive values) - no highlighting
+            nestedDisplay = String(fieldDiff.oldValue || '')
+          }
+          parts.push(`<div style="margin-bottom: 0.25rem;"><span style="font-size: 0.75rem; font-weight: 600; color: #4b5563;">${escapeHtml(formattedKey)}: </span>${renderHighlightedSpan(nestedDisplay, 'removed')}</div>`)
+        } else if (fieldDiff.type === 'modified') {
+          const displayVal = isOldView ? fieldDiff.oldValue : fieldDiff.newValue
+          if (Array.isArray(displayVal)) {
+            nestedDisplay = displayVal.join(', ')
+          } else if (typeof displayVal === 'object' && displayVal !== null) {
+            nestedDisplay = formatNestedValue(displayVal)
+          } else {
+            nestedDisplay = String(displayVal || '')
+          }
+          parts.push(`<div style="margin-bottom: 0.25rem;"><span style="font-size: 0.75rem; font-weight: 600; color: #4b5563;">${escapeHtml(formattedKey)}: </span>${renderHighlightedSpan(nestedDisplay, 'modified')}</div>`)
+        } else {
+          const displayVal = fieldDiff.newValue !== undefined ? fieldDiff.newValue : fieldDiff.oldValue
+          if (Array.isArray(displayVal)) {
+            nestedDisplay = displayVal.join(', ')
+          } else if (typeof displayVal === 'object' && displayVal !== null) {
+            nestedDisplay = formatNestedValue(displayVal)
+          } else {
+            nestedDisplay = String(displayVal || '')
+          }
+          parts.push(`<div style="margin-bottom: 0.25rem;"><span style="font-size: 0.75rem; font-weight: 600; color: #4b5563;">${escapeHtml(formattedKey)}: </span><span style="color: #374151;">${escapeHtml(nestedDisplay)}</span></div>`)
+        }
+      })
+      
+      displayValue = parts.join('')
+    }
+    // Regular field rendering with highlighting
+    else {
       const value = newValue !== undefined ? newValue : oldValue
-      const displayVal = String(value || '')
+      let displayVal = ''
+      
+      if (Array.isArray(value)) {
+        if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
+          displayVal = formatNestedValue(value)
+        } else {
+          displayVal = value.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              return formatNestedValue([v])
+            }
+            return String(v)
+          }).join(', ')
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        displayVal = formatNestedValue(value)
+      } else {
+        displayVal = String(value || '')
+      }
+      
+      // Apply highlighting based on diff type
+      if (diff.type === 'added' && !isOldView) {
+        displayValue = renderHighlightedSpan(displayVal, 'added')
+      } else if (diff.type === 'removed' && isOldView) {
+        displayValue = renderHighlightedSpan(displayVal, 'removed')
+      } else if (diff.type === 'modified') {
+        displayValue = renderHighlightedSpan(displayVal, 'modified')
+      } else {
       displayValue = escapeHtml(displayVal)
+      }
     }
 
     return `
       <div style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.375rem 0; border-bottom: 1px solid #f3f4f6;">
         <span style="font-size: 0.75rem; font-weight: 600; color: #4b5563; width: 10rem; flex-shrink: 0;">${escapeHtml(label)}:</span>
-        <span style="font-size: 0.875rem; flex: 1; color: ${color}; word-wrap: break-word; overflow-wrap: anywhere;">${displayValue || '<span style="color: #9ca3af; font-style: italic;">(empty)</span>'}</span>
+        <span style="font-size: 0.875rem; flex: 1; word-wrap: break-word; overflow-wrap: anywhere;">${displayValue || '<span style="color: #9ca3af; font-style: italic;">(empty)</span>'}</span>
       </div>
     `
   }
 
-  // Render entity with diff comparison (for modified entities)
+  // Render entity with diff comparison (for modified entities - NEW view)
   const renderEntityWithDiffHtml = (oldEntity, newEntity) => {
     if (!oldEntity || !newEntity) return ''
 
+    // Special rendering for FirewallRule - use same structure as DiffView.jsx
+    if (newEntity._entityType === 'FirewallRule') {
+      let html = '<div style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">'
+      
+      // Basic Information
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Basic Information</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Name', oldEntity.name, newEntity.name, false)
+      html += renderFieldWithDiffHtml('Description', oldEntity.description, newEntity.description, false)
+      html += renderFieldWithDiffHtml('Status', oldEntity.status, newEntity.status, false)
+      html += renderFieldWithDiffHtml('Policy Type', oldEntity.policyType, newEntity.policyType, false)
+      html += renderFieldWithDiffHtml('IP Family', oldEntity.ipFamily, newEntity.ipFamily, false)
+      html += renderFieldWithDiffHtml('Position', oldEntity.position, newEntity.position, false)
+      if (newEntity.after) html += renderFieldWithDiffHtml('Positioned After', oldEntity.after, newEntity.after, false)
+      html += '</div></div>'
+
+      // Action & Traffic
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Action & Traffic Control</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Action', oldEntity.action, newEntity.action, false)
+      html += renderFieldWithDiffHtml('Log Traffic', oldEntity.logTraffic, newEntity.logTraffic, false)
+      html += renderFieldWithDiffHtml('Schedule', oldEntity.schedule || 'All The Time', newEntity.schedule || 'All The Time', false)
+      html += '</div></div>'
+
+      // Source Configuration
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Source Configuration</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Source Zones', oldEntity.sourceZones && oldEntity.sourceZones.length > 0 ? oldEntity.sourceZones : ['Any'], newEntity.sourceZones && newEntity.sourceZones.length > 0 ? newEntity.sourceZones : ['Any'], false)
+      html += renderFieldWithDiffHtml('Source Networks', oldEntity.sourceNetworks && oldEntity.sourceNetworks.length > 0 ? oldEntity.sourceNetworks : ['Any'], newEntity.sourceNetworks && newEntity.sourceNetworks.length > 0 ? newEntity.sourceNetworks : ['Any'], false)
+      html += '</div></div>'
+
+      // Destination Configuration
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Destination Configuration</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Destination Zones', oldEntity.destinationZones && oldEntity.destinationZones.length > 0 ? oldEntity.destinationZones : ['Any'], newEntity.destinationZones && newEntity.destinationZones.length > 0 ? newEntity.destinationZones : ['Any'], false)
+      html += renderFieldWithDiffHtml('Destination Networks', oldEntity.destinationNetworks && oldEntity.destinationNetworks.length > 0 ? oldEntity.destinationNetworks : ['Any'], newEntity.destinationNetworks && newEntity.destinationNetworks.length > 0 ? newEntity.destinationNetworks : ['Any'], false)
+      html += renderFieldWithDiffHtml('Services/Ports', oldEntity.services && oldEntity.services.length > 0 ? oldEntity.services : ['Any'], newEntity.services && newEntity.services.length > 0 ? newEntity.services : ['Any'], false)
+      html += '</div></div>'
+
+      // Security Features
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Security Features</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Web Filter', oldEntity.webFilter || 'None', newEntity.webFilter || 'None', false)
+      html += renderFieldWithDiffHtml('Application Control', oldEntity.applicationControl || 'None', newEntity.applicationControl || 'None', false)
+      html += renderFieldWithDiffHtml('Intrusion Prevention', oldEntity.intrusionPrevention || 'None', newEntity.intrusionPrevention || 'None', false)
+      html += renderFieldWithDiffHtml('Virus Scanning', oldEntity.scanVirus || 'Disable', newEntity.scanVirus || 'Disable', false)
+      html += renderFieldWithDiffHtml('Zero Day Protection', oldEntity.zeroDayProtection || 'Disable', newEntity.zeroDayProtection || 'Disable', false)
+      html += renderFieldWithDiffHtml('Proxy Mode', oldEntity.proxyMode || 'Disable', newEntity.proxyMode || 'Disable', false)
+      html += renderFieldWithDiffHtml('HTTPS Decryption', oldEntity.decryptHTTPS || 'Disable', newEntity.decryptHTTPS || 'Disable', false)
+      html += '</div></div>'
+
+      html += '</div>'
+      return html
+    }
+
+    // Generic entity rendering
     const allKeys = new Set([
       ...Object.keys(oldEntity).filter(k => k !== '_entityType' && k !== 'name'),
       ...Object.keys(newEntity).filter(k => k !== '_entityType' && k !== 'name')
@@ -493,7 +905,7 @@ export function generateHTMLDiff(diffResults, oldFileName, newFileName) {
         const oldValue = oldEntity[key]
         const newValue = newEntity[key]
         const label = key.replace(/([A-Z])/g, ' $1').trim()
-        html += renderFieldWithDiffHtml(label, oldValue, newValue)
+        html += renderFieldWithDiffHtml(label, oldValue, newValue, false) // false = NEW view
       })
       html += '</div></div>'
     }
@@ -507,7 +919,116 @@ export function generateHTMLDiff(diffResults, oldFileName, newFileName) {
         const oldValue = oldEntity[key]
         const newValue = newEntity[key]
         const label = key.replace(/([A-Z])/g, ' $1').trim()
-        html += renderFieldWithDiffHtml(label, oldValue, newValue)
+        html += renderFieldWithDiffHtml(label, oldValue, newValue, false) // false = NEW view
+      })
+      html += '</div></div>'
+    }
+
+    html += '</div>'
+    return html
+  }
+
+  // Render entity for OLD view with diff highlighting
+  const renderEntityWithDiffHtmlOld = (oldEntity, newEntity) => {
+    if (!oldEntity) return ''
+
+    // Special rendering for FirewallRule - use same structure as DiffView.jsx
+    if (oldEntity._entityType === 'FirewallRule') {
+      let html = '<div style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">'
+      
+      // Basic Information
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Basic Information</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Name', oldEntity.name, newEntity?.name, true)
+      html += renderFieldWithDiffHtml('Description', oldEntity.description, newEntity?.description, true)
+      html += renderFieldWithDiffHtml('Status', oldEntity.status, newEntity?.status, true)
+      html += renderFieldWithDiffHtml('Policy Type', oldEntity.policyType, newEntity?.policyType, true)
+      html += renderFieldWithDiffHtml('IP Family', oldEntity.ipFamily, newEntity?.ipFamily, true)
+      html += renderFieldWithDiffHtml('Position', oldEntity.position, newEntity?.position, true)
+      if (oldEntity.after) html += renderFieldWithDiffHtml('Positioned After', oldEntity.after, newEntity?.after, true)
+      html += '</div></div>'
+
+      // Action & Traffic
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Action & Traffic Control</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Action', oldEntity.action, newEntity?.action, true)
+      html += renderFieldWithDiffHtml('Log Traffic', oldEntity.logTraffic, newEntity?.logTraffic, true)
+      html += renderFieldWithDiffHtml('Schedule', oldEntity.schedule || 'All The Time', newEntity?.schedule || 'All The Time', true)
+      html += '</div></div>'
+
+      // Source Configuration
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Source Configuration</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Source Zones', oldEntity.sourceZones && oldEntity.sourceZones.length > 0 ? oldEntity.sourceZones : ['Any'], newEntity?.sourceZones && newEntity.sourceZones.length > 0 ? newEntity.sourceZones : ['Any'], true)
+      html += renderFieldWithDiffHtml('Source Networks', oldEntity.sourceNetworks && oldEntity.sourceNetworks.length > 0 ? oldEntity.sourceNetworks : ['Any'], newEntity?.sourceNetworks && newEntity.sourceNetworks.length > 0 ? newEntity.sourceNetworks : ['Any'], true)
+      html += '</div></div>'
+
+      // Destination Configuration
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Destination Configuration</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Destination Zones', oldEntity.destinationZones && oldEntity.destinationZones.length > 0 ? oldEntity.destinationZones : ['Any'], newEntity?.destinationZones && newEntity.destinationZones.length > 0 ? newEntity.destinationZones : ['Any'], true)
+      html += renderFieldWithDiffHtml('Destination Networks', oldEntity.destinationNetworks && oldEntity.destinationNetworks.length > 0 ? oldEntity.destinationNetworks : ['Any'], newEntity?.destinationNetworks && newEntity.destinationNetworks.length > 0 ? newEntity.destinationNetworks : ['Any'], true)
+      html += renderFieldWithDiffHtml('Services/Ports', oldEntity.services && oldEntity.services.length > 0 ? oldEntity.services : ['Any'], newEntity?.services && newEntity.services.length > 0 ? newEntity.services : ['Any'], true)
+      html += '</div></div>'
+
+      // Security Features
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Security Features</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      html += renderFieldWithDiffHtml('Web Filter', oldEntity.webFilter || 'None', newEntity?.webFilter || 'None', true)
+      html += renderFieldWithDiffHtml('Application Control', oldEntity.applicationControl || 'None', newEntity?.applicationControl || 'None', true)
+      html += renderFieldWithDiffHtml('Intrusion Prevention', oldEntity.intrusionPrevention || 'None', newEntity?.intrusionPrevention || 'None', true)
+      html += renderFieldWithDiffHtml('Virus Scanning', oldEntity.scanVirus || 'Disable', newEntity?.scanVirus || 'Disable', true)
+      html += renderFieldWithDiffHtml('Zero Day Protection', oldEntity.zeroDayProtection || 'Disable', newEntity?.zeroDayProtection || 'Disable', true)
+      html += renderFieldWithDiffHtml('Proxy Mode', oldEntity.proxyMode || 'Disable', newEntity?.proxyMode || 'Disable', true)
+      html += renderFieldWithDiffHtml('HTTPS Decryption', oldEntity.decryptHTTPS || 'Disable', newEntity?.decryptHTTPS || 'Disable', true)
+      html += '</div></div>'
+
+      html += '</div>'
+      return html
+    }
+
+    // Generic entity rendering
+    const allKeys = new Set([
+      ...Object.keys(oldEntity).filter(k => k !== '_entityType' && k !== 'name'),
+      ...(newEntity ? Object.keys(newEntity).filter(k => k !== '_entityType' && k !== 'name') : [])
+    ])
+    
+    const priorityFields = ['Name', 'Description', 'Status', 'Type', 'IPAddress', 'MACAddress', 'FQDN', 'IPFamily', 'PolicyType']
+    const allFieldKeys = Array.from(allKeys).sort()
+    const priorityFieldKeys = priorityFields.filter(k => allKeys.has(k))
+    const otherFieldKeys = allFieldKeys.filter(k => !priorityFields.includes(k))
+
+    let html = '<div style="padding: 1rem; display: flex; flex-direction: column; gap: 1rem;">'
+
+    // Basic Information
+    if (priorityFieldKeys.length > 0) {
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Basic Information</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      priorityFieldKeys.forEach(key => {
+        const oldValue = oldEntity[key]
+        const newValue = newEntity ? newEntity[key] : undefined
+        const label = key.replace(/([A-Z])/g, ' $1').trim()
+        html += renderFieldWithDiffHtml(label, oldValue, newValue, true) // true = OLD view
+      })
+      html += '</div></div>'
+    }
+
+    // Additional Details
+    if (otherFieldKeys.length > 0) {
+      html += '<div>'
+      html += '<h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Additional Details</h4>'
+      html += '<div style="background-color: #f9fafb; border-radius: 0.375rem; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.25rem;">'
+      otherFieldKeys.forEach(key => {
+        const oldValue = oldEntity[key]
+        const newValue = newEntity ? newEntity[key] : undefined
+        const label = key.replace(/([A-Z])/g, ' $1').trim()
+        html += renderFieldWithDiffHtml(label, oldValue, newValue, true) // true = OLD view
       })
       html += '</div></div>'
     }
@@ -606,7 +1127,7 @@ export function generateHTMLDiff(diffResults, oldFileName, newFileName) {
               <div style="margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #fecaca;">
                 <h3 style="font-size: 0.875rem; font-weight: 600; color: #991b1b; text-transform: uppercase; margin: 0;">Old / Current</h3>
               </div>
-              ${renderEntityHtml(parsedOldEntity, 'removed')}
+              ${renderEntityWithDiffHtmlOld(parsedOldEntity, parsedNewEntity)}
             </div>
             <div style="padding-left: 1rem;">
               <div style="margin-bottom: 0.75rem; padding-bottom: 0.5rem; border-bottom: 1px solid #bbf7d0;">

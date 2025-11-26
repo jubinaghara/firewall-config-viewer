@@ -623,7 +623,7 @@ function parseEntityFromXml(xmlString, tagName) {
 }
 
 // Helper to render any entity in readable format
-function renderEntity(entity, type, tagName) {
+function renderEntity(entity, type, tagName, compareEntity = undefined) {
   if (!entity) return null
 
   // Helper to format nested structures for display
@@ -794,7 +794,7 @@ function renderEntity(entity, type, tagName) {
     )
   }
 
-  // Render field with diff highlighting for arrays
+  // Render field with diff highlighting for arrays (OLD view - shows RED for removed, normal for unchanged)
   const renderFieldWithDiff = (label, oldValue, newValue, highlight = null, showEmpty = false) => {
     // Handle empty values
     if (!showEmpty) {
@@ -803,43 +803,124 @@ function renderEntity(entity, type, tagName) {
       if (Array.isArray(oldValue) && Array.isArray(newValue) && oldValue.length === 0 && newValue.length === 0) return null
     }
     
-    // Check if values actually differ (for highlighting purposes)
-    // For arrays, use Set comparison to ignore order
-    let valuesDiffer = false
-    if (Array.isArray(oldValue) && Array.isArray(newValue)) {
-      // Compare arrays ignoring order
-      const oldSet = new Set(oldValue.map(v => JSON.stringify(v)))
-      const newSet = new Set(newValue.map(v => JSON.stringify(v)))
-      valuesDiffer = oldSet.size !== newSet.size || 
-                     !Array.from(oldSet).every(v => newSet.has(v))
-    } else if (typeof oldValue === 'object' && oldValue !== null && !Array.isArray(oldValue) &&
-               typeof newValue === 'object' && newValue !== null && !Array.isArray(newValue)) {
-      // For objects, compare field by field
-      valuesDiffer = JSON.stringify(oldValue) !== JSON.stringify(newValue)
-    } else {
-      // For primitive values or mixed types
-      valuesDiffer = JSON.stringify(oldValue) !== JSON.stringify(newValue)
+    // If there's no comparison value (newValue is undefined), just render normally without highlighting
+    // This happens for newly added or removed entities where there's no old/new comparison
+    if (newValue === undefined) {
+      // No comparison - just render the value normally
+      let displayValue = ''
+      if (Array.isArray(oldValue)) {
+        if (oldValue.length > 0 && typeof oldValue[0] === 'object' && oldValue[0] !== null && !Array.isArray(oldValue[0])) {
+          displayValue = formatNestedValue(oldValue)
+        } else {
+          displayValue = oldValue.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              return formatNestedValue([v])
+            }
+            return String(v)
+          }).join(', ')
+        }
+      } else if (typeof oldValue === 'object' && oldValue !== null) {
+        displayValue = formatNestedValue(oldValue)
+      } else {
+        displayValue = String(oldValue || '')
+      }
+      
+      // Apply only the provided highlight (for status fields, etc.), not diff-based highlighting
+      let colorClass = 'text-gray-700'
+      if (highlight === 'green') {
+        colorClass = 'text-green-700'
+      } else if (highlight === 'red') {
+        colorClass = 'text-red-700'
+      }
+      
+      return (
+        <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+          <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
+          <span className={`text-sm flex-1 ${colorClass} break-words`} style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+            {displayValue || '(empty)'}
+          </span>
+        </div>
+      )
     }
     
-    // Compare arrays if both are arrays
-    const arrayDiff = compareArrays(oldValue, newValue)
-    const isArrayComparison = arrayDiff !== null && (arrayDiff.removed.length > 0 || arrayDiff.added.length > 0 || arrayDiff.unchanged.length > 0)
+    // Perform deep comparison only when we have both old and new values
+    const diff = deepCompareValues(oldValue, newValue)
     
-    // Simplified - no highlighting, just display the value
-    // Check if this is an array of objects
-    const newArr = Array.isArray(newValue) ? newValue : []
-    if (newArr.length > 0 && typeof newArr[0] === 'object' && newArr[0] !== null && !Array.isArray(newArr[0])) {
-      // Array of objects - display all items
+    // Handle simple arrays with diff highlighting (OLD view)
+    if (diff.isSimpleArray && diff.type !== 'unchanged' && newValue !== undefined) {
       const parts = []
-      newArr.forEach((item, idx) => {
-        const formattedItem = formatNestedValue([item])
+      
+      // Unchanged items (normal color)
+      if (diff.unchanged && diff.unchanged.length > 0) {
+        parts.push(
+          <span key="unchanged" className="text-gray-700">
+            {diff.unchanged.join(', ')}
+            {(diff.removed.length > 0 || diff.added.length > 0) && ', '}
+          </span>
+        )
+      }
+      
+      // Removed items (RED) - shown in OLD view
+      if (diff.removed && diff.removed.length > 0) {
+        parts.push(
+          <span key="removed" className="text-red-700 font-semibold bg-red-50 px-1 rounded">
+            {diff.removed.join(', ')}
+            {diff.added.length > 0 && ', '}
+          </span>
+        )
+      }
+      
+      // Added items (not shown in OLD view, they're in NEW view)
+      
+      return (
+        <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+          <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
+          <div className="text-sm flex-1 break-words" style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+            {parts.length > 0 ? parts : <span className="text-gray-400 italic">(empty)</span>}
+          </div>
+        </div>
+      )
+    }
+    
+    // Handle array of objects with diff highlighting (OLD view)
+    if (diff.isArrayOfObjects && diff.items && newValue !== undefined) {
+      const parts = []
+      diff.items.forEach((item, idx) => {
+        if (idx > 0) {
+          parts.push(<span key={`sep-${idx}`}> | </span>)
+        }
+        
+        if (item.type === 'removed') {
+          // Removed item - RED
+          const formattedItem = formatNestedValue([item.oldItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(
+            <span key={idx} className="text-red-700 font-semibold bg-red-50 px-1 rounded">
+              [{item.index + 1}] {itemText}
+            </span>
+          )
+        } else if (item.type === 'added') {
+          // Added item - not shown in OLD view (shown in NEW view)
+          // Skip it here
+        } else if (item.type === 'modified') {
+          // Modified item - show old value with YELLOW/ORANGE highlighting
+          const formattedItem = formatNestedValue([item.oldItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(
+            <span key={idx} className="text-yellow-700 font-semibold bg-yellow-50 px-1 rounded">
+              [{item.index + 1}] {itemText}
+            </span>
+          )
+        } else {
+          // Unchanged item - normal color
+          const formattedItem = formatNestedValue([item.oldItem || item.newItem])
         const itemText = formattedItem.replace(/^\[1\]\s*/, '')
         parts.push(
           <span key={idx} className="text-gray-700">
-            {idx > 0 && ' | '}
-            <span className="text-gray-700">[{idx + 1}]</span> {itemText}
+              [{item.index + 1}] {itemText}
           </span>
         )
+        }
       })
       
       return (
@@ -852,30 +933,59 @@ function renderEntity(entity, type, tagName) {
       )
     }
     
-    // Handle nested objects (like Exclusions) - no highlighting
-    if (typeof oldValue === 'object' && oldValue !== null && !Array.isArray(oldValue) &&
-        typeof newValue === 'object' && newValue !== null && !Array.isArray(newValue)) {
-      const allKeys = new Set([...Object.keys(oldValue || {}), ...Object.keys(newValue || {})])
+    // Handle nested objects with diff highlighting (OLD view)
+    if (diff.isObject && diff.fields && newValue !== undefined) {
       const parts = []
-      
-      allKeys.forEach(key => {
-        const oldVal = oldValue[key]
-        const newVal = newValue[key]
+      Object.entries(diff.fields).forEach(([key, fieldDiff]) => {
         const formattedKey = key.replace(/([A-Z])/g, ' $1').trim()
         let nestedDisplay = ''
         
-        if (Array.isArray(newVal || oldVal)) {
-          nestedDisplay = Array.isArray(newVal) ? newVal.join(', ') : (Array.isArray(oldVal) ? oldVal.join(', ') : '')
+        if (fieldDiff.type === 'removed') {
+          // Removed field - RED
+          if (Array.isArray(fieldDiff.oldValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.oldValue) ? fieldDiff.oldValue.join(', ') : ''
         } else {
-          nestedDisplay = String(newVal !== undefined ? newVal : oldVal || '')
-        }
-        
+            nestedDisplay = String(fieldDiff.oldValue || '')
+          }
+          parts.push(
+            <div key={key} className="mb-1">
+              <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
+              <span className="text-sm text-red-700 font-semibold bg-red-50 px-1 rounded">{nestedDisplay}</span>
+            </div>
+          )
+        } else if (fieldDiff.type === 'added') {
+          // Added field - not shown in OLD view
+        } else if (fieldDiff.type === 'modified') {
+          // Modified field - show old value in YELLOW/ORANGE
+          if (Array.isArray(fieldDiff.oldValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.oldValue) ? fieldDiff.oldValue.join(', ') : ''
+          } else if (typeof fieldDiff.oldValue === 'object' && fieldDiff.oldValue !== null) {
+            nestedDisplay = formatNestedValue(fieldDiff.oldValue)
+          } else {
+            nestedDisplay = String(fieldDiff.oldValue || '')
+          }
+          parts.push(
+            <div key={key} className="mb-1">
+              <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
+              <span className="text-sm text-yellow-700 font-semibold bg-yellow-50 px-1 rounded">{nestedDisplay}</span>
+            </div>
+          )
+        } else {
+          // Unchanged field - normal color
+          if (Array.isArray(fieldDiff.oldValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.oldValue) ? fieldDiff.oldValue.join(', ') : ''
+          } else if (typeof fieldDiff.oldValue === 'object' && fieldDiff.oldValue !== null) {
+            nestedDisplay = formatNestedValue(fieldDiff.oldValue)
+          } else {
+            nestedDisplay = String(fieldDiff.oldValue || '')
+          }
         parts.push(
           <div key={key} className="mb-1">
             <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
             <span className="text-sm text-gray-700">{nestedDisplay}</span>
           </div>
         )
+        }
       })
       
       if (parts.length > 0) {
@@ -890,61 +1000,86 @@ function renderEntity(entity, type, tagName) {
       }
     }
     
-    // Regular field rendering
-    const value = newValue !== undefined ? newValue : oldValue
+    // Regular field rendering with highlighting (OLD view)
     let displayValue = ''
-    if (Array.isArray(value)) {
-      // Check if array contains objects
-      if (value.length > 0 && typeof value[0] === 'object' && value[0] !== null && !Array.isArray(value[0])) {
-        // Array of objects - format properly using formatNestedValue
-        displayValue = formatNestedValue(value)
+    let isRemoved = false
+    let isModified = false
+    
+    if (newValue !== undefined) {
+      // We have a comparison value
+      if (diff.type === 'removed') {
+        isRemoved = true
+        displayValue = String(oldValue || '')
+      } else if (diff.type === 'modified') {
+        isModified = true
+        displayValue = String(oldValue || '')
       } else {
-        // Simple array - comma separated, but ensure we convert to strings properly
-        displayValue = value.map(v => {
+        displayValue = String(oldValue || '')
+      }
+    } else {
+      // No comparison - just show the value
+      displayValue = String(oldValue || '')
+    }
+    
+    if (Array.isArray(oldValue)) {
+      if (oldValue.length > 0 && typeof oldValue[0] === 'object' && oldValue[0] !== null && !Array.isArray(oldValue[0])) {
+        displayValue = formatNestedValue(oldValue)
+      } else {
+        displayValue = oldValue.map(v => {
           if (typeof v === 'object' && v !== null) {
-            // If somehow an object got into a simple array, format it
             return formatNestedValue([v])
           }
           return String(v)
         }).join(', ')
       }
-    } else if (typeof value === 'object' && value !== null) {
-      displayValue = formatNestedValue(value)
-    } else {
-      displayValue = String(value || '')
+    } else if (typeof oldValue === 'object' && oldValue !== null) {
+      displayValue = formatNestedValue(oldValue)
     }
     
-    // No highlighting - just use the provided highlight color for status fields
-    const color = highlight === 'green' ? 'text-green-700' : highlight === 'red' ? 'text-red-700' : 'text-gray-700'
+    // Apply color based on diff type and highlight parameter
+    let colorClass = 'text-gray-700'
+    if (highlight === 'green') {
+      colorClass = 'text-green-700'
+    } else if (highlight === 'red') {
+      colorClass = 'text-red-700'
+    } else if (isRemoved) {
+      colorClass = 'text-red-700 font-semibold bg-red-50 px-1 rounded'
+    } else if (isModified) {
+      colorClass = 'text-yellow-700 font-semibold bg-yellow-50 px-1 rounded'
+    }
+    
     return (
       <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
         <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
-        <span className={`text-sm flex-1 ${color} break-words`} style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+        <span className={`text-sm flex-1 ${colorClass} break-words`} style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
           {displayValue || '(empty)'}
         </span>
       </div>
     )
   }
 
-  const renderField = (label, value, highlight = null, showEmpty = true) => {
-    return renderFieldWithDiff(label, null, value, highlight, showEmpty)
+  const renderField = (label, value, highlight = null, showEmpty = true, compareValue = undefined) => {
+    return renderFieldWithDiff(label, value, compareValue, highlight, showEmpty)
   }
 
   // Special rendering for FirewallRule
   if (entity._entityType === 'FirewallRule') {
+    // Only use compareFields if compareEntity actually exists (not for newly added/removed entities)
+    const hasComparison = compareEntity !== undefined && compareEntity !== null
+    
     return (
       <div className="p-4 space-y-4">
         {/* Basic Information */}
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Basic Information</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {renderField('Name', entity.name)}
-            {renderField('Description', entity.description)}
-            {renderField('Status', entity.status, entity.status === 'Enable' ? 'green' : null)}
-            {renderField('Policy Type', entity.policyType)}
-            {renderField('IP Family', entity.ipFamily)}
-            {renderField('Position', entity.position)}
-            {entity.after && renderField('Positioned After', entity.after)}
+            {renderField('Name', entity.name, null, true, hasComparison ? compareEntity.name : undefined)}
+            {renderField('Description', entity.description, null, true, hasComparison ? compareEntity.description : undefined)}
+            {renderField('Status', entity.status, entity.status === 'Enable' ? 'green' : null, true, hasComparison ? compareEntity.status : undefined)}
+            {renderField('Policy Type', entity.policyType, null, true, hasComparison ? compareEntity.policyType : undefined)}
+            {renderField('IP Family', entity.ipFamily, null, true, hasComparison ? compareEntity.ipFamily : undefined)}
+            {renderField('Position', entity.position, null, true, hasComparison ? compareEntity.position : undefined)}
+            {entity.after && renderField('Positioned After', entity.after, null, true, hasComparison ? compareEntity.after : undefined)}
           </div>
         </div>
 
@@ -952,9 +1087,9 @@ function renderEntity(entity, type, tagName) {
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Action & Traffic Control</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {renderField('Action', entity.action, entity.action === 'Accept' ? 'green' : entity.action === 'Deny' ? 'red' : null)}
-            {renderField('Log Traffic', entity.logTraffic)}
-            {renderField('Schedule', entity.schedule || 'All The Time')}
+            {renderField('Action', entity.action, entity.action === 'Accept' ? 'green' : entity.action === 'Deny' ? 'red' : null, true, hasComparison ? compareEntity.action : undefined)}
+            {renderField('Log Traffic', entity.logTraffic, null, true, hasComparison ? compareEntity.logTraffic : undefined)}
+            {renderField('Schedule', entity.schedule || 'All The Time', null, true, hasComparison ? (compareEntity.schedule || 'All The Time') : undefined)}
           </div>
         </div>
 
@@ -962,8 +1097,8 @@ function renderEntity(entity, type, tagName) {
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Source Configuration</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {renderField('Source Zones', entity.sourceZones && entity.sourceZones.length > 0 ? entity.sourceZones : ['Any'], null, true)}
-            {renderField('Source Networks', entity.sourceNetworks && entity.sourceNetworks.length > 0 ? entity.sourceNetworks : ['Any'], null, true)}
+            {renderField('Source Zones', entity.sourceZones && entity.sourceZones.length > 0 ? entity.sourceZones : ['Any'], null, true, hasComparison ? (compareEntity.sourceZones && compareEntity.sourceZones.length > 0 ? compareEntity.sourceZones : ['Any']) : undefined)}
+            {renderField('Source Networks', entity.sourceNetworks && entity.sourceNetworks.length > 0 ? entity.sourceNetworks : ['Any'], null, true, hasComparison ? (compareEntity.sourceNetworks && compareEntity.sourceNetworks.length > 0 ? compareEntity.sourceNetworks : ['Any']) : undefined)}
           </div>
         </div>
 
@@ -971,9 +1106,9 @@ function renderEntity(entity, type, tagName) {
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Destination Configuration</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {renderField('Destination Zones', entity.destinationZones && entity.destinationZones.length > 0 ? entity.destinationZones : ['Any'], null, true)}
-            {renderField('Destination Networks', entity.destinationNetworks && entity.destinationNetworks.length > 0 ? entity.destinationNetworks : ['Any'], null, true)}
-            {renderField('Services/Ports', entity.services && entity.services.length > 0 ? entity.services : ['Any'], null, true)}
+            {renderField('Destination Zones', entity.destinationZones && entity.destinationZones.length > 0 ? entity.destinationZones : ['Any'], null, true, hasComparison ? (compareEntity.destinationZones && compareEntity.destinationZones.length > 0 ? compareEntity.destinationZones : ['Any']) : undefined)}
+            {renderField('Destination Networks', entity.destinationNetworks && entity.destinationNetworks.length > 0 ? entity.destinationNetworks : ['Any'], null, true, hasComparison ? (compareEntity.destinationNetworks && compareEntity.destinationNetworks.length > 0 ? compareEntity.destinationNetworks : ['Any']) : undefined)}
+            {renderField('Services/Ports', entity.services && entity.services.length > 0 ? entity.services : ['Any'], null, true, hasComparison ? (compareEntity.services && compareEntity.services.length > 0 ? compareEntity.services : ['Any']) : undefined)}
           </div>
         </div>
 
@@ -981,13 +1116,13 @@ function renderEntity(entity, type, tagName) {
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Security Features</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {renderField('Web Filter', entity.webFilter || 'None')}
-            {renderField('Application Control', entity.applicationControl || 'None')}
-            {renderField('Intrusion Prevention', entity.intrusionPrevention || 'None')}
-            {renderField('Virus Scanning', entity.scanVirus || 'Disable')}
-            {renderField('Zero Day Protection', entity.zeroDayProtection || 'Disable')}
-            {renderField('Proxy Mode', entity.proxyMode || 'Disable')}
-            {renderField('HTTPS Decryption', entity.decryptHTTPS || 'Disable')}
+            {renderField('Web Filter', entity.webFilter || 'None', null, true, hasComparison ? (compareEntity.webFilter || 'None') : undefined)}
+            {renderField('Application Control', entity.applicationControl || 'None', null, true, hasComparison ? (compareEntity.applicationControl || 'None') : undefined)}
+            {renderField('Intrusion Prevention', entity.intrusionPrevention || 'None', null, true, hasComparison ? (compareEntity.intrusionPrevention || 'None') : undefined)}
+            {renderField('Virus Scanning', entity.scanVirus || 'Disable', null, true, hasComparison ? (compareEntity.scanVirus || 'Disable') : undefined)}
+            {renderField('Zero Day Protection', entity.zeroDayProtection || 'Disable', null, true, hasComparison ? (compareEntity.zeroDayProtection || 'Disable') : undefined)}
+            {renderField('Proxy Mode', entity.proxyMode || 'Disable', null, true, hasComparison ? (compareEntity.proxyMode || 'Disable') : undefined)}
+            {renderField('HTTPS Decryption', entity.decryptHTTPS || 'Disable', null, true, hasComparison ? (compareEntity.decryptHTTPS || 'Disable') : undefined)}
           </div>
         </div>
       </div>
@@ -996,6 +1131,11 @@ function renderEntity(entity, type, tagName) {
 
   // Generic entity rendering - group fields logically
   const { _entityType, name, ...fields } = entity
+  // Only use compareFieldsObj if compareEntity actually exists (not for newly added/removed entities)
+  const hasComparison = compareEntity !== undefined && compareEntity !== null
+  const compareFieldsObj = hasComparison ? Object.fromEntries(
+    Object.keys(compareEntity).filter(k => k !== '_entityType' && k !== 'name').map(k => [k, compareEntity[k]])
+  ) : {}
   
   // Priority fields to show first (sorted)
   const priorityFields = ['Name', 'Description', 'Status', 'Type', 'IPAddress', 'MACAddress', 'FQDN', 'IPFamily', 'PolicyType']
@@ -1026,7 +1166,7 @@ function renderEntity(entity, type, tagName) {
               const label = key.replace(/([A-Z])/g, ' $1').trim()
               const highlight = (key === 'Status' && value === 'Enable') ? 'green' : 
                                (key === 'Status' && value === 'Disable') ? 'red' : null
-              return <Fragment key={key}>{renderField(label, value, highlight, true)}</Fragment>
+              return <Fragment key={key}>{renderField(label, value, highlight, true, hasComparison ? compareFieldsObj[key] : undefined)}</Fragment>
             })}
           </div>
         </div>
@@ -1039,13 +1179,211 @@ function renderEntity(entity, type, tagName) {
           <div className="bg-gray-50 rounded p-3 space-y-1">
             {Object.entries(otherFieldsObj).map(([key, value]) => {
               const label = key.replace(/([A-Z])/g, ' $1').trim()
-              return <Fragment key={key}>{renderField(label, value, null, true)}</Fragment>
+              return <Fragment key={key}>{renderField(label, value, null, true, hasComparison ? compareFieldsObj[key] : undefined)}</Fragment>
             })}
           </div>
         </div>
       )}
     </div>
   )
+}
+
+// Deep comparison helper - accurately compares values including nested structures
+function deepCompareValues(oldValue, newValue) {
+  // Handle null/undefined
+  if (oldValue === null || oldValue === undefined) {
+    if (newValue === null || newValue === undefined) return { type: 'unchanged' }
+    return { type: 'added', oldValue: null, newValue }
+  }
+  if (newValue === null || newValue === undefined) {
+    return { type: 'removed', oldValue, newValue: null }
+  }
+
+  // Handle arrays
+  if (Array.isArray(oldValue) || Array.isArray(newValue)) {
+    const oldArr = Array.isArray(oldValue) ? oldValue : []
+    const newArr = Array.isArray(newValue) ? newValue : []
+    
+    // Check if arrays contain objects
+    const oldHasObjects = oldArr.length > 0 && typeof oldArr[0] === 'object' && oldArr[0] !== null && !Array.isArray(oldArr[0])
+    const newHasObjects = newArr.length > 0 && typeof newArr[0] === 'object' && newArr[0] !== null && !Array.isArray(newArr[0])
+    
+    if (oldHasObjects || newHasObjects) {
+      // Array of objects - compare by content, not just index
+      // Create maps to match objects by their content signature
+      const oldItemMap = new Map()
+      const newItemMap = new Map()
+      
+      // Index old items by their JSON signature
+      oldArr.forEach((item, idx) => {
+        const signature = JSON.stringify(item)
+        if (!oldItemMap.has(signature)) {
+          oldItemMap.set(signature, [])
+        }
+        oldItemMap.get(signature).push({ item, originalIndex: idx })
+      })
+      
+      // Index new items by their JSON signature
+      newArr.forEach((item, idx) => {
+        const signature = JSON.stringify(item)
+        if (!newItemMap.has(signature)) {
+          newItemMap.set(signature, [])
+        }
+        newItemMap.get(signature).push({ item, originalIndex: idx })
+      })
+      
+      // Track which items have been matched
+      const oldMatched = new Set()
+      const newMatched = new Set()
+      const items = []
+      
+      // First pass: find exact matches (unchanged items)
+      oldItemMap.forEach((oldEntries, signature) => {
+        if (newItemMap.has(signature)) {
+          const newEntries = newItemMap.get(signature)
+          const minCount = Math.min(oldEntries.length, newEntries.length)
+          for (let i = 0; i < minCount; i++) {
+            const oldEntry = oldEntries[i]
+            const newEntry = newEntries[i]
+            oldMatched.add(oldEntry.originalIndex)
+            newMatched.add(newEntry.originalIndex)
+            items.push({
+              index: items.length,
+              type: 'unchanged',
+              oldItem: oldEntry.item,
+              newItem: newEntry.item,
+              oldIndex: oldEntry.originalIndex,
+              newIndex: newEntry.originalIndex
+            })
+          }
+        }
+      })
+      
+      // Second pass: find modified items (same position but different content)
+      // Compare items at same index if not already matched
+      const maxLen = Math.max(oldArr.length, newArr.length)
+      for (let i = 0; i < maxLen; i++) {
+        const oldItem = oldArr[i]
+        const newItem = newArr[i]
+        
+        if (oldItem !== undefined && newItem !== undefined && 
+            !oldMatched.has(i) && !newMatched.has(i)) {
+          // Items at same index but different content - check if they're similar (modified)
+          const oldStr = JSON.stringify(oldItem)
+          const newStr = JSON.stringify(newItem)
+          if (oldStr !== newStr) {
+            // Check if they share some keys (modified) vs completely different (removed+added)
+            const oldKeys = Object.keys(oldItem)
+            const newKeys = Object.keys(newItem)
+            const sharedKeys = oldKeys.filter(k => newKeys.includes(k))
+            
+            if (sharedKeys.length > 0) {
+              // Modified - same structure, different values
+              oldMatched.add(i)
+              newMatched.add(i)
+              items.push({
+                index: items.length,
+                type: 'modified',
+                oldItem,
+                newItem,
+                oldIndex: i,
+                newIndex: i
+              })
+            }
+          }
+        }
+      }
+      
+      // Third pass: identify remaining items as added or removed
+      oldArr.forEach((oldItem, idx) => {
+        if (!oldMatched.has(idx)) {
+          items.push({
+            index: items.length,
+            type: 'removed',
+            oldItem,
+            newItem: null,
+            oldIndex: idx,
+            newIndex: null
+          })
+        }
+      })
+      
+      newArr.forEach((newItem, idx) => {
+        if (!newMatched.has(idx)) {
+          items.push({
+            index: items.length,
+            type: 'added',
+            oldItem: null,
+            newItem,
+            oldIndex: null,
+            newIndex: idx
+          })
+        }
+      })
+      
+      const hasChanges = items.some(item => item.type !== 'unchanged')
+      return {
+        type: hasChanges ? 'modified' : 'unchanged',
+        oldValue,
+        newValue,
+        items,
+        isArrayOfObjects: true
+      }
+    } else {
+      // Simple array - compare sets (order-independent)
+      const oldSet = new Set(oldArr.map(v => String(v)))
+      const newSet = new Set(newArr.map(v => String(v)))
+      
+      const removed = oldArr.filter(v => !newSet.has(String(v)))
+      const added = newArr.filter(v => !oldSet.has(String(v)))
+      const unchanged = oldArr.filter(v => newSet.has(String(v)))
+      
+      if (removed.length === 0 && added.length === 0) {
+        return { type: 'unchanged', oldValue, newValue }
+      }
+      
+      return {
+        type: 'modified',
+        oldValue,
+        newValue,
+        removed,
+        added,
+        unchanged,
+        isSimpleArray: true
+      }
+    }
+  }
+
+  // Handle objects
+  if (typeof oldValue === 'object' && oldValue !== null && typeof newValue === 'object' && newValue !== null) {
+    const oldKeys = Object.keys(oldValue)
+    const newKeys = Object.keys(newValue)
+    const allKeys = new Set([...oldKeys, ...newKeys])
+    
+    const fields = {}
+    let hasChanges = false
+    
+    allKeys.forEach(key => {
+      const fieldDiff = deepCompareValues(oldValue[key], newValue[key])
+      if (fieldDiff.type !== 'unchanged') hasChanges = true
+      fields[key] = fieldDiff
+    })
+    
+    return {
+      type: hasChanges ? 'modified' : 'unchanged',
+      oldValue,
+      newValue,
+      fields,
+      isObject: true
+    }
+  }
+
+  // Handle primitive values
+  if (String(oldValue) === String(newValue)) {
+    return { type: 'unchanged', oldValue, newValue }
+  }
+  
+  return { type: 'modified', oldValue, newValue }
 }
 
 // Render entity with highlights for changed fields (for side-by-side view)
@@ -1098,125 +1436,132 @@ function renderEntityWithHighlights(newEntity, oldEntity, tagName) {
     return String(value)
   }
 
-  // Helper to compare arrays of objects
-  const compareObjectArrays = (oldArr, newArr) => {
-    if (!Array.isArray(oldArr) && !Array.isArray(newArr)) return null
-    const old = Array.isArray(oldArr) ? oldArr : []
-    const new_ = Array.isArray(newArr) ? newArr : []
-    
-    // Check if new array contains objects (or old array if it has items)
-    const checkArray = new_.length > 0 ? new_ : old
-    if (checkArray.length > 0 && typeof checkArray[0] === 'object' && checkArray[0] !== null && !Array.isArray(checkArray[0])) {
-      const maxLen = Math.max(old.length, new_.length)
-      const result = []
-      
-      for (let i = 0; i < maxLen; i++) {
-        const oldItem = old[i]
-        const newItem = new_[i]
-        
-        if (oldItem === undefined && newItem !== undefined) {
-          result.push({ index: i, type: 'added', item: newItem, newItem, oldItem: null })
-        } else if (oldItem !== undefined && newItem === undefined) {
-          result.push({ index: i, type: 'removed', item: oldItem, newItem: null, oldItem })
-        } else if (oldItem !== undefined && newItem !== undefined) {
-          const oldStr = JSON.stringify(oldItem)
-          const newStr = JSON.stringify(newItem)
-          if (oldStr !== newStr) {
-            result.push({ index: i, type: 'modified', item: newItem, newItem, oldItem })
-          } else {
-            result.push({ index: i, type: 'unchanged', item: newItem, newItem, oldItem })
-          }
-        }
-      }
-      
-      return result
-    }
-    return null
-  }
-
-  // Helper to format a rule object - no highlighting, clean display
-  const formatRuleWithHighlights = (newRule, oldRule, index) => {
-    if (!newRule && !oldRule) return null
-    
-    const rule = newRule || oldRule
-    const parts = []
-    const allKeys = new Set([...Object.keys(newRule || {}), ...Object.keys(oldRule || {})])
-    
-    allKeys.forEach((key, keyIdx) => {
-      const formattedKey = key.replace(/([A-Z])/g, ' $1').trim()
-      const newVal = newRule?.[key]
-      const oldVal = oldRule?.[key]
-      
-      let valueDisplay = ''
-      
-      if (Array.isArray(newVal || oldVal)) {
-        // Show all items from new array, no highlighting
-        const newArr = Array.isArray(newVal) ? newVal : []
-        const valueParts = []
-        
-        newArr.forEach((item, i) => {
-          if (i > 0) {
-            valueParts.push(<span key={`sep-${i}`}>, </span>)
-          }
-          valueParts.push(
-            <span key={i} className="text-gray-700">
-              {item}
-            </span>
-          )
-        })
-        
-        valueDisplay = valueParts.length > 0 ? valueParts : <span className="text-gray-400 italic">(empty)</span>
-      } else if (typeof (newVal || oldVal) === 'object' && (newVal || oldVal) !== null) {
-        // Object - format it as string
-        const formatted = formatNestedValue(newVal || oldVal)
-        valueDisplay = <span className="text-gray-700">{formatted}</span>
-      } else {
-        // Simple value - no highlighting
-        const displayVal = newVal !== undefined ? newVal : oldVal
-        valueDisplay = <span className="text-gray-700">{String(displayVal || '')}</span>
-      }
-      
-      parts.push(
-        <span key={key}>
-          {keyIdx > 0 && '; '}
-          <span>{formattedKey}: </span>
-          {valueDisplay}
-        </span>
-      )
-    })
-    
-    return (
-      <span>
-        <span className="text-gray-700">[{index + 1}]</span> {parts}
-      </span>
-    )
-  }
-
-  // Render field with highlighting for changed items in arrays of objects
-  // Simplified - no highlighting, just display all items
-  const renderFieldWithHighlights = (label, newValue, oldValue, showEmpty = false) => {
+  // Render field with accurate diff highlighting (NEW view - shows GREEN for added, normal for unchanged)
+  const renderFieldWithHighlights = (label, newValue, oldValue, showEmpty = false, highlight = null) => {
     if (!showEmpty) {
       if ((oldValue === null || oldValue === undefined || oldValue === '') && 
           (newValue === null || newValue === undefined || newValue === '')) return null
       if (Array.isArray(oldValue) && Array.isArray(newValue) && oldValue.length === 0 && newValue.length === 0) return null
     }
     
-    // Check if this is an array of objects
-    const newArr = Array.isArray(newValue) ? newValue : []
+    // If there's no comparison value (oldValue is undefined), just render normally without highlighting
+    // This happens for newly added entities where there's no old/new comparison
+    if (oldValue === undefined) {
+      // No comparison - just render the value normally
+      let displayValue = ''
+      if (Array.isArray(newValue)) {
+        if (newValue.length > 0 && typeof newValue[0] === 'object' && newValue[0] !== null && !Array.isArray(newValue[0])) {
+          displayValue = formatNestedValue(newValue)
+        } else {
+          displayValue = newValue.map(v => {
+            if (typeof v === 'object' && v !== null) {
+              return formatNestedValue([v])
+            }
+            return String(v)
+          }).join(', ')
+        }
+      } else if (typeof newValue === 'object' && newValue !== null) {
+        displayValue = formatNestedValue(newValue)
+      } else {
+        displayValue = String(newValue || '')
+      }
+      
+      // Apply only the provided highlight (for status fields, etc.), not diff-based highlighting
+      let colorClass = 'text-gray-700'
+      if (highlight === 'green') {
+        colorClass = 'text-green-700'
+      } else if (highlight === 'red') {
+        colorClass = 'text-red-700'
+      }
+      
+      return (
+        <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+          <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
+          <span className={`text-sm flex-1 ${colorClass} break-words`} style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+            {displayValue || '(empty)'}
+          </span>
+        </div>
+      )
+    }
     
-    // If newValue is an array of objects, always display all items
-    if (newArr.length > 0 && typeof newArr[0] === 'object' && newArr[0] !== null && !Array.isArray(newArr[0])) {
-      // Display all items without highlighting
+    // Perform deep comparison only when we have both old and new values
+    const diff = deepCompareValues(oldValue, newValue)
+    
+    // Handle simple arrays with diff highlighting
+    if (diff.isSimpleArray && diff.type !== 'unchanged') {
+    const parts = []
+      
+      // Unchanged items (normal color)
+      if (diff.unchanged && diff.unchanged.length > 0) {
+        parts.push(
+          <span key="unchanged" className="text-gray-700">
+            {diff.unchanged.join(', ')}
+            {(diff.removed.length > 0 || diff.added.length > 0) && ', '}
+            </span>
+          )
+      }
+      
+      // Removed items (not shown in NEW view, but we show what's missing)
+      // Actually, in NEW view we don't show removed items, they're in OLD view
+      
+      // Added items (GREEN)
+      if (diff.added && diff.added.length > 0) {
+      parts.push(
+          <span key="added" className="text-green-700 font-semibold bg-green-50 px-1 rounded">
+            {diff.added.join(', ')}
+        </span>
+      )
+      }
+    
+    return (
+        <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+          <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
+          <div className="text-sm flex-1 break-words" style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+            {parts.length > 0 ? parts : <span className="text-gray-400 italic">(empty)</span>}
+          </div>
+        </div>
+      )
+    }
+    
+    // Handle array of objects with diff highlighting
+    if (diff.isArrayOfObjects && diff.items) {
       const parts = []
-      newArr.forEach((item, idx) => {
-        const formattedItem = formatNestedValue([item])
+      diff.items.forEach((item, idx) => {
+        if (idx > 0) {
+          parts.push(<span key={`sep-${idx}`}> | </span>)
+        }
+        
+        if (item.type === 'added') {
+          // Added item - GREEN
+          const formattedItem = formatNestedValue([item.newItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(
+            <span key={idx} className="text-green-700 font-semibold bg-green-50 px-1 rounded">
+              [{item.index + 1}] {itemText}
+            </span>
+          )
+        } else if (item.type === 'removed') {
+          // Removed item - not shown in NEW view (shown in OLD view)
+          // Skip it here
+        } else if (item.type === 'modified') {
+          // Modified item - show new value with YELLOW/ORANGE highlighting
+          const formattedItem = formatNestedValue([item.newItem])
+          const itemText = formattedItem.replace(/^\[1\]\s*/, '')
+          parts.push(
+            <span key={idx} className="text-yellow-700 font-semibold bg-yellow-50 px-1 rounded">
+              [{item.index + 1}] {itemText}
+            </span>
+          )
+        } else {
+          // Unchanged item - normal color
+          const formattedItem = formatNestedValue([item.newItem || item.oldItem])
         const itemText = formattedItem.replace(/^\[1\]\s*/, '')
         parts.push(
           <span key={idx} className="text-gray-700">
-            {idx > 0 && ' | '}
-            <span className="text-gray-700">[{idx + 1}]</span> {itemText}
+              [{item.index + 1}] {itemText}
           </span>
         )
+        }
       })
       
       return (
@@ -1229,17 +1574,90 @@ function renderEntityWithHighlights(newEntity, oldEntity, tagName) {
       )
     }
     
-    // Regular field rendering - no highlighting
+    // Handle nested objects with diff highlighting
+    if (diff.isObject && diff.fields) {
+      const parts = []
+      Object.entries(diff.fields).forEach(([key, fieldDiff]) => {
+        const formattedKey = key.replace(/([A-Z])/g, ' $1').trim()
+        let nestedDisplay = ''
+        
+        if (fieldDiff.type === 'added') {
+          // Added field - GREEN
+          if (Array.isArray(fieldDiff.newValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.newValue) ? fieldDiff.newValue.join(', ') : ''
+          } else {
+            nestedDisplay = String(fieldDiff.newValue || '')
+          }
+          parts.push(
+            <div key={key} className="mb-1">
+              <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
+              <span className="text-sm text-green-700 font-semibold bg-green-50 px-1 rounded">{nestedDisplay}</span>
+            </div>
+          )
+        } else if (fieldDiff.type === 'removed') {
+          // Removed field - not shown in NEW view
+        } else if (fieldDiff.type === 'modified') {
+          // Modified field - show new value in YELLOW/ORANGE
+          if (Array.isArray(fieldDiff.newValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.newValue) ? fieldDiff.newValue.join(', ') : ''
+          } else if (typeof fieldDiff.newValue === 'object' && fieldDiff.newValue !== null) {
+            nestedDisplay = formatNestedValue(fieldDiff.newValue)
+          } else {
+            nestedDisplay = String(fieldDiff.newValue || '')
+          }
+          parts.push(
+            <div key={key} className="mb-1">
+              <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
+              <span className="text-sm text-yellow-700 font-semibold bg-yellow-50 px-1 rounded">{nestedDisplay}</span>
+            </div>
+          )
+        } else {
+          // Unchanged field - normal color
+          if (Array.isArray(fieldDiff.newValue)) {
+            nestedDisplay = Array.isArray(fieldDiff.newValue) ? fieldDiff.newValue.join(', ') : ''
+          } else if (typeof fieldDiff.newValue === 'object' && fieldDiff.newValue !== null) {
+            nestedDisplay = formatNestedValue(fieldDiff.newValue)
+          } else {
+            nestedDisplay = String(fieldDiff.newValue || '')
+          }
+          parts.push(
+            <div key={key} className="mb-1">
+              <span className="text-xs font-semibold text-gray-600">{formattedKey}: </span>
+              <span className="text-sm text-gray-700">{nestedDisplay}</span>
+            </div>
+          )
+        }
+      })
+      
+      if (parts.length > 0) {
+        return (
+          <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
+            <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
+            <div className="text-sm flex-1 break-words" style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+              {parts}
+            </div>
+          </div>
+        )
+      }
+    }
+    
+    // Regular field rendering with highlighting
     let displayValue = ''
-    if (Array.isArray(newValue)) {
+    let isAdded = false
+    let isModified = false
+    
+    if (diff.type === 'added') {
+      isAdded = true
+      displayValue = String(newValue || '')
+    } else if (diff.type === 'modified') {
+      isModified = true
+      displayValue = String(newValue || '')
+    } else if (Array.isArray(newValue)) {
       if (newValue.length > 0 && typeof newValue[0] === 'object' && newValue[0] !== null && !Array.isArray(newValue[0])) {
-        // Array of objects - use formatNestedValue
         displayValue = formatNestedValue(newValue)
       } else {
-        // Simple array - ensure we convert all items to strings properly
         displayValue = newValue.map(v => {
           if (typeof v === 'object' && v !== null) {
-            // If somehow an object got into a simple array, format it
             return formatNestedValue([v]).replace(/^\[1\]\s*/, '')
           }
           return String(v)
@@ -1251,52 +1669,146 @@ function renderEntityWithHighlights(newEntity, oldEntity, tagName) {
       displayValue = String(newValue || '')
     }
     
+    // Apply color based on diff type and highlight parameter
+    let colorClass = 'text-gray-700'
+    if (highlight === 'green') {
+      colorClass = 'text-green-700'
+    } else if (highlight === 'red') {
+      colorClass = 'text-red-700'
+    } else if (isAdded) {
+      colorClass = 'text-green-700 font-semibold bg-green-50 px-1 rounded'
+    } else if (isModified) {
+      colorClass = 'text-yellow-700 font-semibold bg-yellow-50 px-1 rounded'
+    }
+    
     return (
       <div className="flex items-start gap-3 py-1.5 border-b border-gray-100 last:border-b-0">
         <span className="text-xs font-semibold text-gray-600 w-40 flex-shrink-0">{label}:</span>
-        <span className="text-sm flex-1 text-gray-700 break-words" style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
+        <span className={`text-sm flex-1 ${colorClass} break-words`} style={{ wordWrap: 'break-word', overflowWrap: 'anywhere' }}>
           {displayValue || '(empty)'}
         </span>
       </div>
     )
   }
 
-  // Get all fields from new entity
+  // Special rendering for FirewallRule - use same structure as renderEntity
+  if (newEntity._entityType === 'FirewallRule') {
+    // Only use oldFields if oldEntity actually exists (not for newly added entities)
+    const hasComparison = oldEntity !== undefined && oldEntity !== null
+    
+    return (
+      <div className="p-4 space-y-4">
+        {/* Basic Information */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Basic Information</h4>
+          <div className="bg-gray-50 rounded p-3 space-y-1">
+            {renderFieldWithHighlights('Name', newEntity.name, hasComparison ? oldEntity.name : undefined, true)}
+            {renderFieldWithHighlights('Description', newEntity.description, hasComparison ? oldEntity.description : undefined, true)}
+            {renderFieldWithHighlights('Status', newEntity.status, hasComparison ? oldEntity.status : undefined, true, newEntity.status === 'Enable' ? 'green' : null)}
+            {renderFieldWithHighlights('Policy Type', newEntity.policyType, hasComparison ? oldEntity.policyType : undefined, true)}
+            {renderFieldWithHighlights('IP Family', newEntity.ipFamily, hasComparison ? oldEntity.ipFamily : undefined, true)}
+            {renderFieldWithHighlights('Position', newEntity.position, hasComparison ? oldEntity.position : undefined, true)}
+            {newEntity.after && renderFieldWithHighlights('Positioned After', newEntity.after, hasComparison ? oldEntity.after : undefined, true)}
+          </div>
+        </div>
+
+        {/* Action & Traffic */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Action & Traffic Control</h4>
+          <div className="bg-gray-50 rounded p-3 space-y-1">
+            {renderFieldWithHighlights('Action', newEntity.action, hasComparison ? oldEntity.action : undefined, true, newEntity.action === 'Accept' ? 'green' : newEntity.action === 'Deny' ? 'red' : null)}
+            {renderFieldWithHighlights('Log Traffic', newEntity.logTraffic, hasComparison ? oldEntity.logTraffic : undefined, true)}
+            {renderFieldWithHighlights('Schedule', newEntity.schedule || 'All The Time', hasComparison ? (oldEntity.schedule || 'All The Time') : undefined, true)}
+          </div>
+        </div>
+
+        {/* Source Configuration */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Source Configuration</h4>
+          <div className="bg-gray-50 rounded p-3 space-y-1">
+            {renderFieldWithHighlights('Source Zones', newEntity.sourceZones && newEntity.sourceZones.length > 0 ? newEntity.sourceZones : ['Any'], hasComparison ? (oldEntity.sourceZones && oldEntity.sourceZones.length > 0 ? oldEntity.sourceZones : ['Any']) : undefined, true)}
+            {renderFieldWithHighlights('Source Networks', newEntity.sourceNetworks && newEntity.sourceNetworks.length > 0 ? newEntity.sourceNetworks : ['Any'], hasComparison ? (oldEntity.sourceNetworks && oldEntity.sourceNetworks.length > 0 ? oldEntity.sourceNetworks : ['Any']) : undefined, true)}
+          </div>
+        </div>
+
+        {/* Destination Configuration */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Destination Configuration</h4>
+          <div className="bg-gray-50 rounded p-3 space-y-1">
+            {renderFieldWithHighlights('Destination Zones', newEntity.destinationZones && newEntity.destinationZones.length > 0 ? newEntity.destinationZones : ['Any'], hasComparison ? (oldEntity.destinationZones && oldEntity.destinationZones.length > 0 ? oldEntity.destinationZones : ['Any']) : undefined, true)}
+            {renderFieldWithHighlights('Destination Networks', newEntity.destinationNetworks && newEntity.destinationNetworks.length > 0 ? newEntity.destinationNetworks : ['Any'], hasComparison ? (oldEntity.destinationNetworks && oldEntity.destinationNetworks.length > 0 ? oldEntity.destinationNetworks : ['Any']) : undefined, true)}
+            {renderFieldWithHighlights('Services/Ports', newEntity.services && newEntity.services.length > 0 ? newEntity.services : ['Any'], hasComparison ? (oldEntity.services && oldEntity.services.length > 0 ? oldEntity.services : ['Any']) : undefined, true)}
+          </div>
+        </div>
+
+        {/* Security Features */}
+        <div>
+          <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Security Features</h4>
+          <div className="bg-gray-50 rounded p-3 space-y-1">
+            {renderFieldWithHighlights('Web Filter', newEntity.webFilter || 'None', hasComparison ? (oldEntity.webFilter || 'None') : undefined, true)}
+            {renderFieldWithHighlights('Application Control', newEntity.applicationControl || 'None', hasComparison ? (oldEntity.applicationControl || 'None') : undefined, true)}
+            {renderFieldWithHighlights('Intrusion Prevention', newEntity.intrusionPrevention || 'None', hasComparison ? (oldEntity.intrusionPrevention || 'None') : undefined, true)}
+            {renderFieldWithHighlights('Virus Scanning', newEntity.scanVirus || 'Disable', hasComparison ? (oldEntity.scanVirus || 'Disable') : undefined, true)}
+            {renderFieldWithHighlights('Zero Day Protection', newEntity.zeroDayProtection || 'Disable', hasComparison ? (oldEntity.zeroDayProtection || 'Disable') : undefined, true)}
+            {renderFieldWithHighlights('Proxy Mode', newEntity.proxyMode || 'Disable', hasComparison ? (oldEntity.proxyMode || 'Disable') : undefined, true)}
+            {renderFieldWithHighlights('HTTPS Decryption', newEntity.decryptHTTPS || 'Disable', hasComparison ? (oldEntity.decryptHTTPS || 'Disable') : undefined, true)}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Generic entity rendering - group fields logically (same structure as renderEntity)
   const { _entityType, name, ...fields } = newEntity
-  const oldFields = oldEntity ? Object.fromEntries(
+  // Only use oldFieldsObj if oldEntity actually exists (not for newly added entities)
+  const hasComparison = oldEntity !== undefined && oldEntity !== null
+  const oldFieldsObj = hasComparison ? Object.fromEntries(
     Object.keys(oldEntity).filter(k => k !== '_entityType' && k !== 'name').map(k => [k, oldEntity[k]])
   ) : {}
   
   // Priority fields to show first (sorted)
   const priorityFields = ['Name', 'Description', 'Status', 'Type', 'IPAddress', 'MACAddress', 'FQDN', 'IPFamily', 'PolicyType']
-  const allKeys = new Set([...Object.keys(fields), ...Object.keys(oldFields)])
-  const allFieldKeys = Array.from(allKeys).sort() // Sort all keys alphabetically
-  const priorityFieldKeys = priorityFields.filter(k => allKeys.has(k))
+  const allFieldKeys = Object.keys(fields).sort() // Sort all keys alphabetically
+  const priorityFieldKeys = priorityFields.filter(k => fields.hasOwnProperty(k))
   const otherFieldKeys = allFieldKeys.filter(k => !priorityFields.includes(k))
   
+  // Group fields into sections (sorted)
+  const basicFields = {}
+  const otherFieldsObj = {}
+  
+  priorityFieldKeys.forEach(key => {
+    basicFields[key] = fields[key]
+  })
+  
+  otherFieldKeys.forEach(key => {
+    otherFieldsObj[key] = fields[key]
+  })
+
   return (
     <div className="p-4 space-y-4">
       {/* Basic Information */}
-      {priorityFieldKeys.length > 0 && (
+      {Object.keys(basicFields).length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Basic Information</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {priorityFieldKeys.map(key => {
+            {Object.entries(basicFields).map(([key, value]) => {
               const label = key.replace(/([A-Z])/g, ' $1').trim()
-              return <Fragment key={key}>{renderFieldWithHighlights(label, fields[key], oldFields[key] || null, true)}</Fragment>
+              const highlight = (key === 'Status' && value === 'Enable') ? 'green' : 
+                               (key === 'Status' && value === 'Disable') ? 'red' : null
+              return <Fragment key={key}>{renderFieldWithHighlights(label, value, hasComparison ? oldFieldsObj[key] : undefined, true, highlight)}</Fragment>
             })}
           </div>
         </div>
       )}
 
       {/* Additional Fields */}
-      {otherFieldKeys.length > 0 && (
+      {Object.keys(otherFieldsObj).length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">Additional Details</h4>
           <div className="bg-gray-50 rounded p-3 space-y-1">
-            {otherFieldKeys.map(key => {
+            {Object.entries(otherFieldsObj).map(([key, value]) => {
               const label = key.replace(/([A-Z])/g, ' $1').trim()
-              return <Fragment key={key}>{renderFieldWithHighlights(label, fields[key], oldFields[key] || null, true)}</Fragment>
+              return <Fragment key={key}>{renderFieldWithHighlights(label, value, hasComparison ? oldFieldsObj[key] : undefined, true)}</Fragment>
             })}
           </div>
         </div>
@@ -1405,7 +1917,7 @@ function renderEntityWithDiff(oldEntity, newEntity, tagName) {
       // Removed items (red) - no strikethrough, just color
       if (arrayDiff.removed.length > 0) {
         parts.push(
-          <span key="removed" className="text-red-700 font-semibold">
+          <span key="removed" className="text-red-700 font-semibold bg-red-50 px-1 rounded">
             {arrayDiff.removed.join(', ')}
             {arrayDiff.added.length > 0 && ', '}
           </span>
@@ -1415,7 +1927,7 @@ function renderEntityWithDiff(oldEntity, newEntity, tagName) {
       // Added items (green)
       if (arrayDiff.added.length > 0) {
         parts.push(
-          <span key="added" className="text-green-700 font-semibold">
+          <span key="added" className="text-green-700 font-semibold bg-green-50 px-1 rounded">
             {arrayDiff.added.join(', ')}
           </span>
         )
@@ -1517,7 +2029,7 @@ function DiffItem({ item, type, isExpanded, onToggle }) {
       case 'removed':
         return <Minus className="w-4 h-4 text-red-600" />
       case 'modified':
-        return <Edit className="w-4 h-4 text-yellow-600" />
+        return <span className="text-yellow-600 font-bold text-lg">~</span>
       default:
         return null
     }
@@ -1626,7 +2138,7 @@ function DiffItem({ item, type, isExpanded, onToggle }) {
                 <div className="mb-3 pb-2 border-b border-red-200">
                   <h3 className="text-sm font-semibold text-red-700 uppercase">Old / Current</h3>
                 </div>
-                {renderEntity(parsedEntity.old, 'removed', item.tag)}
+                {renderEntity(parsedEntity.old, 'removed', item.tag, parsedEntity.new)}
               </div>
               <div className="pl-4">
                 <div className="mb-3 pb-2 border-b border-gray-200">

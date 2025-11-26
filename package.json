@@ -1,9 +1,9 @@
 {
   "name": "firewall-config-viewer",
   "private": true,
-  "version": "1.0.0",
-  "description": "A beautiful, lightweight application to parse and visualize firewall configuration files (Entities.xml) in a human-readable format.",
-  "author": "Firewall Config Viewer Team",
+  "version": "1.1.0",
+  "description": "Convert XML to readable reports and compare configuration changes.",
+  "author": "Sophos Ltd",
   "type": "module",
   "main": "electron/main.js",
   "homepage": "./",
@@ -36,6 +36,7 @@
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
     "@vitejs/plugin-react": "^4.2.1",
+    "ajv": "^8.12.0",
     "autoprefixer": "^10.4.16",
     "concurrently": "^8.2.2",
     "electron": "^28.3.3",
@@ -48,7 +49,7 @@
   },
   "build": {
     "appId": "com.firewallconfigviewer.app",
-    "productName": "Firewall Config Viewer",
+    "productName": "Sophos Firewall Config Viewer",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -59,6 +60,12 @@
       "electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
     "asar": true,
     "asarUnpack": [
       "**/*.{node,dll,dylib,so}"
@@ -67,21 +74,27 @@
       {
         "from": "public",
         "to": "public",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "public/sophos-favicon.ico",
+      "icon": "build/icon.ico",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "sign": null,
       "requestedExecutionLevel": "asInvoker",
@@ -98,14 +111,20 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
-      "icon": "public/sophos-favicon.ico",
+      "icon": "icon.ico",
       "category": "public.app-category.utilities",
       "artifactName": "${productName}-${version}-${arch}.${ext}",
       "hardenedRuntime": false,
@@ -115,10 +134,12 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "public/sophos-favicon.ico",
+      "icon": "icon.ico",
       "category": "Utility"
     },
     "nsis": {
@@ -127,10 +148,10 @@
       "allowElevation": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "installerIcon": "public/sophos-favicon.ico",
-      "uninstallerIcon": "public/sophos-favicon.ico",
-      "installerHeaderIcon": "public/sophos-favicon.ico",
-      "shortcutIcon": "public/sophos-favicon.ico",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "include": "build/installer.nsis",  
       "shortcutName": "${productName}",
       "deleteAppDataOnUninstall": false,
       "license": "build/license.txt",
@@ -144,7 +165,7 @@
     },
     "dmg": {
       "title": "${productName} ${version}",
-      "icon": "public/sophos-favicon.ico"
+      "icon": "icon.ico"
     }
   }
 }

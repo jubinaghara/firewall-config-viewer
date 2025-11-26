@@ -134,7 +134,9 @@ function findEntityReferences(xmlDoc, entityName, entityMap) {
     'SourceService', 'DestinationService', 'FQDN', 'IPAddress',
     'MACAddress', 'Host', 'HostGroup', 'ServiceGroup',
     'CertificateAuthority', 'Certificate', 'After', 'Before',
-    'MoveTo', 'DecryptionProfile', 'IPFamily'
+    'MoveTo', 'DecryptionProfile', 'IPFamily',
+    'User', 'DisableUser', 'AllowedUser', 'AuthenticationServer',
+    'SDWANProfileName', 'LinkSelection'
   ];
   
   // Get all elements that have text content matching the entity name

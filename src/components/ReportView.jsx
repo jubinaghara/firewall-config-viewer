@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { flattenFirewallRule, formatTagName } from '../utils/xmlParser'
+import { flattenFirewallRule, flattenSSLTLSInspectionRule, flattenNATRule, formatTagName } from '../utils/xmlParser'
 import { Zap, CheckCircle2, XCircle, ChevronRight, ChevronDown } from 'lucide-react'
 
 // Helper to normalize exclusions into an array of strings (handles many shapes)
@@ -233,7 +233,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     return (
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
-          <Icon name={icon} className={`${getEntityColor(title)} text-base`} />
+          <Icon name={icon} className="text-gray-600 text-base" />
           <span>{title}</span>
           <span className="text-gray-500 font-normal">({items.length})</span>
         </h3>
@@ -400,7 +400,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     return (
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
-          <Icon name="language" className="text-teal-600 text-base" />
+          <Icon name="language" className="text-gray-600 text-base" />
           <span>FQDNHostList</span>
           <span className="text-gray-500 font-normal">({items.length})</span>
         </h3>
@@ -446,21 +446,113 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     if (!items || items.length === 0) return null
 
     const formatServiceDetails = (fields) => {
-      const details = fields?.ServiceDetails?.ServiceDetail
-      if (!details) return ''
+      if (!fields) return null
+      
+      const serviceDetails = fields?.ServiceDetails
+      if (!serviceDetails || typeof serviceDetails !== 'object') return null
+      
+      // Handle ServiceDetails.ServiceDetail array
+      // ServiceDetail can be an array or a single object
+      let details = serviceDetails.ServiceDetail
+      if (!details) {
+        // Try alternative structure - maybe ServiceDetail is directly an array at ServiceDetails level
+        if (Array.isArray(serviceDetails) && serviceDetails.length > 0) {
+          details = serviceDetails
+        } else {
+          return null
+        }
+      }
+      
       const arr = Array.isArray(details) ? details : [details]
-      return arr.map(d => {
-        const src = d?.SourcePort || d?.SourcePorts || ''
-        const dst = d?.DestinationPort || d?.DestinationPorts || ''
-        const proto = d?.Protocol || fields?.Protocol || ''
-        return [proto && `Protocol ${proto}`, src && `Src ${src}`, dst && `Dst ${dst}`].filter(Boolean).join(', ')
-      }).join(' | ')
+      if (arr.length === 0) return null
+      
+      const serviceType = (fields?.Type || '').trim().toUpperCase()
+      
+      return (
+        <table className="w-full border-collapse text-xs" style={{ fontSize: '0.75rem' }}>
+          <thead>
+            <tr className="bg-gray-50">
+              {serviceType === 'IP' ? (
+                <>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">Protocol</th>
+                </>
+              ) : (serviceType === 'ICMPV6' || serviceType === 'ICMP') ? (
+                <>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">
+                    {serviceType === 'ICMPV6' ? 'ICMPv6 Type' : 'ICMP Type'}
+                  </th>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">
+                    {serviceType === 'ICMPV6' ? 'ICMPv6 Code' : 'ICMP Code'}
+                  </th>
+                </>
+              ) : (
+                <>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">Protocol</th>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">Source Port</th>
+                  <th className="px-2 py-1 text-left font-semibold text-gray-700 border-b border-gray-200">Destination Port</th>
+                </>
+              )}
+            </tr>
+          </thead>
+          <tbody>
+            {arr.map((d, idx) => {
+              if (!d || typeof d !== 'object') return null
+              
+              // For IP type services, use ProtocolName
+              if (serviceType === 'IP' && d.ProtocolName) {
+                return (
+                  <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-2 py-1 text-gray-800">{d.ProtocolName}</td>
+                  </tr>
+                )
+              }
+              
+              // For ICMPv6 type services, use ICMPv6Type and ICMPv6Code
+              if (serviceType === 'ICMPV6') {
+                const icmpv6Type = d.ICMPv6Type || d.ICMPV6Type || '-'
+                const icmpv6Code = d.ICMPv6Code || d.ICMPV6Code || '-'
+                return (
+                  <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-2 py-1 text-gray-800">{icmpv6Type}</td>
+                    <td className="px-2 py-1 text-gray-800">{icmpv6Code}</td>
+                  </tr>
+                )
+              }
+              
+              // For ICMP type services, use ICMPType and ICMPCode
+              if (serviceType === 'ICMP') {
+                const icmpType = d.ICMPType || d.ICMPTYPE || '-'
+                const icmpCode = d.ICMPCode || d.ICMPCODE || '-'
+                return (
+                  <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-2 py-1 text-gray-800">{icmpType}</td>
+                    <td className="px-2 py-1 text-gray-800">{icmpCode}</td>
+                  </tr>
+                )
+              }
+              
+              // For TCPorUDP type services, use SourcePort, DestinationPort, Protocol
+              const src = d.SourcePort || d.SourcePorts || '-'
+              const dst = d.DestinationPort || d.DestinationPorts || '-'
+              const proto = d.Protocol || fields?.Protocol || '-'
+              
+              return (
+                <tr key={idx} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-2 py-1 text-gray-800">{proto}</td>
+                  <td className="px-2 py-1 text-gray-800">{src}</td>
+                  <td className="px-2 py-1 text-gray-800">{dst}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )
     }
 
     return (
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
-          <Icon name="construction" className="text-amber-600 text-base" />
+          <Icon name="construction" className="text-gray-600 text-base" />
           <span>Services</span>
           <span className="text-gray-500 font-normal">({items.length})</span>
         </h3>
@@ -470,6 +562,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-12">#</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
+                <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Type</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Description</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">Service Details</th>
               </tr>
@@ -483,16 +576,36 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                     overflowWrap: 'anywhere',
                     maxWidth: '200px'
                   }}>{it.name || it.fields?.Name || ''}</td>
+                  <td className="px-4 py-2.5 text-sm font-medium text-gray-800" style={{ 
+                    wordBreak: 'break-word', 
+                    overflowWrap: 'anywhere',
+                    maxWidth: '120px'
+                  }}>{it.fields?.Type || '-'}</td>
                   <td className="px-4 py-2.5 text-sm text-gray-700" style={{ 
                     wordBreak: 'break-word', 
                     overflowWrap: 'anywhere',
                     maxWidth: '300px'
                   }}>{it.fields?.Description || ''}</td>
-                  <td className="px-4 py-2.5 text-xs text-gray-800" style={{ 
-                    wordBreak: 'break-word', 
-                    overflowWrap: 'anywhere',
+                  <td className="px-4 py-2.5" style={{ 
                     maxWidth: '400px'
-                  }}>{formatServiceDetails(it.fields)}</td>
+                  }}>
+                    {(() => {
+                      const formatted = formatServiceDetails(it.fields)
+                      if (formatted) {
+                        return formatted
+                      }
+                      // Fallback: if ServiceDetails exists but formatting failed, show a summary
+                      const serviceDetails = it.fields?.ServiceDetails
+                      if (serviceDetails && typeof serviceDetails === 'object') {
+                        const details = serviceDetails.ServiceDetail
+                        if (details) {
+                          const count = Array.isArray(details) ? details.length : 1
+                          return <span className="text-xs text-gray-600">{count} service detail{count !== 1 ? 's' : ''} configured</span>
+                        }
+                      }
+                      return <span className="text-xs text-gray-400 italic">No service details</span>
+                    })()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -521,7 +634,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     return (
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
-          <Icon name="vpn_key" className="text-indigo-600 text-base" />
+          <Icon name="vpn_key" className="text-gray-600 text-base" />
           <span>VPN IPSec Connections</span>
           <span className="text-gray-500 font-normal">({items.length})</span>
         </h3>
@@ -949,9 +1062,14 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
   const allSections = []
   
   // === SECTION 1: HOST OBJECTS (First - as admins configure these first) ===
-  if (entityCounts.ipHosts > 0) allSections.push({ key: 'ipHosts', name: 'IP Hosts', icon: 'dns', count: entityCounts.ipHosts })
-  if (entityCounts.fqdnHosts > 0) allSections.push({ key: 'fqdnHosts', name: 'FQDN Hosts', icon: 'language', count: entityCounts.fqdnHosts })
-  if (entityCounts.macHosts > 0) allSections.push({ key: 'macHosts', name: 'MAC Hosts', icon: 'devices', count: entityCounts.macHosts })
+  const hostObjectsCount = entityCounts.ipHosts + entityCounts.fqdnHosts + entityCounts.macHosts
+  if (hostObjectsCount > 0) {
+    allSections.push({ key: 'referencedObjects', name: 'Host Objects', icon: 'dns', count: hostObjectsCount })
+  }
+  // Individual host types (optional - can be shown separately if needed)
+  // if (entityCounts.ipHosts > 0) allSections.push({ key: 'ipHosts', name: 'IP Hosts', icon: 'dns', count: entityCounts.ipHosts })
+  // if (entityCounts.fqdnHosts > 0) allSections.push({ key: 'fqdnHosts', name: 'FQDN Hosts', icon: 'language', count: entityCounts.fqdnHosts })
+  // if (entityCounts.macHosts > 0) allSections.push({ key: 'macHosts', name: 'MAC Hosts', icon: 'devices', count: entityCounts.macHosts })
   
   // === SECTION 2: INTERFACES & NETWORK (Second - network configuration) ===
   if ((data.entitiesByTag?.Interface?.length > 0) || 
@@ -974,14 +1092,29 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
   
   // === SECTION 3: FIREWALL RULES (Third - rules after objects and interfaces) ===
   if (filteredRules.length > 0) {
-    allSections.push({ key: 'firewallRules', name: 'Firewall Rules', icon: 'shield', count: filteredRules.length })
+    allSections.push({ key: 'firewallRules', name: 'Firewall Rules', icon: 'summarize', count: filteredRules.length })
+  }
+  
+  // === SECTION 3.5: SSL/TLS INSPECTION RULES ===
+  if (data.sslTlsInspectionRules && data.sslTlsInspectionRules.length > 0) {
+    allSections.push({ key: 'sslTlsInspectionRules', name: 'SSL/TLS Inspection Rules', icon: 'lock', count: data.sslTlsInspectionRules.length })
+  }
+  
+  // === SECTION 3.6: NAT RULES ===
+  if (data.entitiesByTag?.NATRule?.length > 0) {
+    allSections.push({ key: 'NATRule', name: 'NAT Rules', icon: 'swap_horiz', count: data.entitiesByTag.NATRule.length })
   }
   
   // === SECTION 4: GROUPS (Fourth - groups after individual objects) ===
-  if (entityCounts.fqdnHostGroups > 0) allSections.push({ key: 'fqdnHostGroups', name: 'FQDN Host Groups', icon: 'group_work', count: entityCounts.fqdnHostGroups })
-  if (entityCounts.ipHostGroups > 0) allSections.push({ key: 'ipHostGroups', name: 'IP Host Groups', icon: 'group_work', count: entityCounts.ipHostGroups })
-  if (entityCounts.serviceGroups > 0) allSections.push({ key: 'serviceGroups', name: 'Service Groups', icon: 'group_work', count: entityCounts.serviceGroups })
-  if (entityCounts.groups > 0) allSections.push({ key: 'groups', name: 'Other Groups', icon: 'groups', count: entityCounts.groups })
+  const groupsCount = entityCounts.fqdnHostGroups + entityCounts.ipHostGroups + entityCounts.serviceGroups + entityCounts.groups
+  if (groupsCount > 0) {
+    allSections.push({ key: 'groups-section', name: 'Groups', icon: 'group_work', count: groupsCount })
+  }
+  // Individual group types (optional - can be shown separately if needed)
+  // if (entityCounts.fqdnHostGroups > 0) allSections.push({ key: 'fqdnHostGroups', name: 'FQDN Host Groups', icon: 'group_work', count: entityCounts.fqdnHostGroups })
+  // if (entityCounts.ipHostGroups > 0) allSections.push({ key: 'ipHostGroups', name: 'IP Host Groups', icon: 'group_work', count: entityCounts.ipHostGroups })
+  // if (entityCounts.serviceGroups > 0) allSections.push({ key: 'serviceGroups', name: 'Service Groups', icon: 'group_work', count: entityCounts.serviceGroups })
+  // if (entityCounts.groups > 0) allSections.push({ key: 'groups', name: 'Other Groups', icon: 'groups', count: entityCounts.groups })
   
   // === SECTION 5: SERVICES (Fifth - services after groups) ===
   if (entityCounts.services > 0) {
@@ -989,13 +1122,19 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
   }
   
   // === SECTION 7: SECURITY POLICIES ===
-  if (dynamicEntities.WebFilterPolicy) allSections.push({ key: 'WebFilterPolicy', name: 'Web Filter Policies', icon: 'filter_alt', count: dynamicEntities.WebFilterPolicy })
-  if (dynamicEntities.Schedule) allSections.push({ key: 'Schedule', name: 'Schedules', icon: 'schedule', count: dynamicEntities.Schedule })
-  if (dynamicEntities.Country) allSections.push({ key: 'Country', name: 'Countries', icon: 'flag', count: dynamicEntities.Country })
-  if (dynamicEntities.IPSPolicy) allSections.push({ key: 'IPSPolicy', name: 'IPS Policies', icon: 'security', count: dynamicEntities.IPSPolicy })
-  if (dynamicEntities.IntrusionPrevention) allSections.push({ key: 'IntrusionPrevention', name: 'Intrusion Prevention', icon: 'security', count: dynamicEntities.IntrusionPrevention })
-  if (dynamicEntities.VirusScanning) allSections.push({ key: 'VirusScanning', name: 'Virus Scanning', icon: 'scanner', count: dynamicEntities.VirusScanning })
-  if (dynamicEntities.WebFilter) allSections.push({ key: 'WebFilter', name: 'Web Filters', icon: 'web', count: dynamicEntities.WebFilter })
+  const securityPoliciesCount = (dynamicEntities.WebFilterPolicy || 0) + (dynamicEntities.Schedule || 0) + (dynamicEntities.Country || 0) + 
+      (dynamicEntities.IPSPolicy || 0) + (dynamicEntities.IntrusionPrevention || 0) + (dynamicEntities.VirusScanning || 0) + (dynamicEntities.WebFilter || 0)
+  if (securityPoliciesCount > 0) {
+    allSections.push({ key: 'security-policies', name: 'Security Policies', icon: 'security', count: securityPoliciesCount })
+  }
+  // Individual security policy types (optional - can be shown separately if needed)
+  // if (dynamicEntities.WebFilterPolicy) allSections.push({ key: 'WebFilterPolicy', name: 'Web Filter Policies', icon: 'filter_alt', count: dynamicEntities.WebFilterPolicy })
+  // if (dynamicEntities.Schedule) allSections.push({ key: 'Schedule', name: 'Schedules', icon: 'schedule', count: dynamicEntities.Schedule })
+  // if (dynamicEntities.Country) allSections.push({ key: 'Country', name: 'Countries', icon: 'flag', count: dynamicEntities.Country })
+  // if (dynamicEntities.IPSPolicy) allSections.push({ key: 'IPSPolicy', name: 'IPS Policies', icon: 'security', count: dynamicEntities.IPSPolicy })
+  // if (dynamicEntities.IntrusionPrevention) allSections.push({ key: 'IntrusionPrevention', name: 'Intrusion Prevention', icon: 'security', count: dynamicEntities.IntrusionPrevention })
+  // if (dynamicEntities.VirusScanning) allSections.push({ key: 'VirusScanning', name: 'Virus Scanning', icon: 'scanner', count: dynamicEntities.VirusScanning })
+  // if (dynamicEntities.WebFilter) allSections.push({ key: 'WebFilter', name: 'Web Filters', icon: 'web', count: dynamicEntities.WebFilter })
   
   // === SECTION 7: CERTIFICATES (Combined - show as one entry but handle individually) ===
   const certificateCount = (dynamicEntities.CertificateAuthority || 0) + 
@@ -1217,7 +1356,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
                       <Icon name={section.icon} className="text-gray-600 text-sm flex-shrink-0" />
                       <span className="text-xs text-gray-700 truncate">{section.name}</span>
-                      {section.count !== null && (
+                      {section.count !== undefined && section.count !== null && (
                         <span className="text-xs text-gray-500 font-medium ml-auto flex-shrink-0">({section.count})</span>
                       )}
                     </div>
@@ -1308,8 +1447,11 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
           <CollapsibleSection
             title={
               <div className="flex items-center gap-2">
-          <Icon name="summarize" className={getEntityColor('firewallRules')} />
-                <span>Detailed Firewall Rules Analysis</span>
+          <Icon name="summarize" className="text-gray-600" />
+                <span>Firewall Rules</span>
+                {filteredRules.length > 0 && (
+                  <span className="text-gray-500 font-normal">({filteredRules.length})</span>
+                )}
               </div>
             }
             isExpanded={expandedMainSections.firewallRules}
@@ -1402,7 +1544,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {/* Basic Information */}
                 <div>
                   <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                    <Icon name="info" className="text-gray-700 text-base" />
+                    <Icon name="info" className="text-gray-600 text-base" />
                     Basic Information
                   </h4>
                   <div className="space-y-1">
@@ -1417,7 +1559,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {/* Action & Traffic Control */}
                 <div>
                   <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                    <Icon name="bolt" className="text-yellow-600 text-base" />
+                    <Icon name="bolt" className="text-gray-600 text-base" />
                     Action & Traffic Control
                   </h4>
                   <div className="space-y-1">
@@ -1434,7 +1576,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {/* Network Configuration */}
                 <div>
                   <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                    <Icon name="login" className="text-base" style={{ color: '#005BC8' }} />
+                    <Icon name="login" className="text-gray-600 text-base" />
                     Source Configuration
                   </h4>
                   <div className="space-y-1">
@@ -1453,7 +1595,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {/* Destination Configuration */}
                 <div>
                   <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                    <Icon name="logout" className="text-green-600 text-base" />
+                    <Icon name="logout" className="text-gray-600 text-base" />
                     Destination Configuration
                   </h4>
                   <div className="space-y-1">
@@ -1475,7 +1617,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {/* Security Features */}
                 <div>
                   <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                    <Icon name="shield_lock" className="text-purple-600 text-base" />
+                    <Icon name="shield_lock" className="text-gray-600 text-base" />
                     Security Features
                   </h4>
                   <div className="space-y-1">
@@ -1493,7 +1635,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 {rule.userPolicy && (
                   <div>
                     <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
-                      <Icon name="groups" className="text-indigo-600 text-base" />
+                      <Icon name="groups" className="text-gray-600 text-base" />
                       User Policy Details
                     </h4>
                     <div className="space-y-1">
@@ -1559,7 +1701,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 return (
                   <div className="mt-4 p-3 bg-yellow-50 border border-yellow-300 rounded">
                     <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider mb-2 flex items-center gap-1">
-                      <Icon name="block" className="text-orange-600 text-base" />
+                      <Icon name="block" className="text-gray-600 text-base" />
                       Exclusions
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -1622,6 +1764,346 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       </div>
       )}
 
+      {/* SSL/TLS Inspection Rules */}
+      {(sectionVisibility.sslTlsInspectionRules !== false && data.sslTlsInspectionRules?.length > 0) && (
+        <div id="ssl-tls-inspection-rules" className="mb-4 scroll-mt-4 px-6">
+          <CollapsibleSection
+            title={
+              <div className="flex items-center gap-2">
+                <Icon name="lock" className="text-gray-600" />
+                <span>SSL/TLS Inspection Rules</span>
+                <span className="text-gray-500 font-normal">({data.sslTlsInspectionRules.length})</span>
+              </div>
+            }
+            isExpanded={expandedMainSections.sslTlsInspectionRules}
+            onToggle={() => toggleMainSection('sslTlsInspectionRules')}
+            className="bg-white"
+            style={{ boxShadow: '0px 0px 6px 0px rgba(0, 0, 0, 0.1)', borderRadius: '4px' }}
+          >
+            <div className="space-y-4">
+              {data.sslTlsInspectionRules.map((rule, index) => {
+                const flat = flattenSSLTLSInspectionRule(rule)
+                const isRuleExpanded = expandedRules.has(`ssl-${rule.id}`)
+                
+                return (
+                  <div 
+                    key={rule.id} 
+                    className="mb-4 border border-gray-200 rounded-lg overflow-hidden rule-section"
+                  >
+                    {/* Rule Header - Collapsible */}
+                    <button
+                      onClick={() => toggleRule(`ssl-${rule.id}`)}
+                      className="w-full flex items-center justify-between p-2.5 hover:bg-gray-50 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        {isRuleExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                        )}
+                        <div className="flex-1">
+                          <h3 className="text-sm font-bold text-gray-900 mb-0.5">
+                            Rule #{index + 1}: {flat.name || 'Unnamed Rule'}
+                          </h3>
+                          {flat.description && (
+                            <p className="text-xs text-gray-600">{flat.description}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="ml-3 flex-shrink-0">
+                        <div className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          flat.enable === 'Yes' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {flat.enable === 'Yes' ? (
+                            <CheckCircle2 className="w-3 h-3 mr-0.5" />
+                          ) : (
+                            <XCircle className="w-3 h-3 mr-0.5" />
+                          )}
+                          {flat.enable === 'Yes' ? 'Enabled' : 'Disabled'}
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Rule Details - Expandable */}
+                    {isRuleExpanded && (
+                      <div className="p-3 pt-0">
+                        {/* Rule Details Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Basic Information */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="info" className="text-gray-600 text-base" />
+                              Basic Information
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField label="Transaction ID" value={rule.transactionId || 'N/A'} />
+                              <ReportField label="Name" value={flat.name} />
+                              <ReportField label="Description" value={flat.description || 'N/A'} />
+                              <ReportField label="Is Default" value={flat.isDefault || 'No'} />
+                              <ReportField label="Enable" value={flat.enable || 'No'} />
+                              <ReportField label="Log Connections" value={flat.logConnections || 'Disable'} />
+                            </div>
+                          </div>
+
+                          {/* Decryption Configuration */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="lock" className="text-gray-600 text-base" />
+                              Decryption Configuration
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField 
+                                label="Decrypt Action" 
+                                value={flat.decryptAction || 'N/A'}
+                                highlight={flat.decryptAction === 'Decrypt' ? 'green' : null}
+                              />
+                              <ReportField label="Decryption Profile" value={flat.decryptionProfile || 'N/A'} />
+                              {flat.moveToName && (
+                                <ReportField label="Move To" value={`${flat.moveToName} (${flat.moveToOrderBy})`} />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Source Configuration */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="login" className="text-gray-600 text-base" />
+                              Source Configuration
+                            </h4>
+                            <div className="space-y-1">
+                              {flat.sourceZones && (
+                                <ReportField label="Source Zones" value={flat.sourceZones} />
+                              )}
+                              {flat.sourceNetworks && (
+                                <ReportField label="Source Networks" value={flat.sourceNetworks} />
+                              )}
+                              {flat.identity && (
+                                <ReportField label="Identity" value={flat.identity} />
+                              )}
+                              {!flat.sourceZones && !flat.sourceNetworks && !flat.identity && (
+                                <ReportField label="Source" value="Any" />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Destination Configuration */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="logout" className="text-gray-600 text-base" />
+                              Destination Configuration
+                            </h4>
+                            <div className="space-y-1">
+                              {flat.destinationZones && (
+                                <ReportField label="Destination Zones" value={flat.destinationZones} />
+                              )}
+                              {flat.destinationNetworks && (
+                                <ReportField label="Destination Networks" value={flat.destinationNetworks} />
+                              )}
+                              {flat.services && (
+                                <ReportField label="Services" value={flat.services} />
+                              )}
+                              {flat.websites && (
+                                <ReportField label="Websites/Categories" value={flat.websites} />
+                              )}
+                              {!flat.destinationZones && !flat.destinationNetworks && !flat.services && !flat.websites && (
+                                <ReportField label="Destination" value="Any" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </CollapsibleSection>
+        </div>
+      )}
+
+      {/* NAT Rules */}
+      {(sectionVisibility.NATRule !== false && data.entitiesByTag?.NATRule?.length > 0) && (
+        <div id="nat-rules" className="mb-4 scroll-mt-4 px-6">
+          <CollapsibleSection
+            title={
+              <div className="flex items-center gap-2">
+                <Icon name="swap_horiz" className="text-gray-600" />
+                <span>NAT Rules</span>
+                <span className="text-gray-500 font-normal">({data.entitiesByTag.NATRule.length})</span>
+              </div>
+            }
+            isExpanded={expandedMainSections.natRules}
+            onToggle={() => toggleMainSection('natRules')}
+            className="bg-white"
+            style={{ boxShadow: '0px 0px 6px 0px rgba(0, 0, 0, 0.1)', borderRadius: '4px' }}
+          >
+            <div className="space-y-4">
+              {data.entitiesByTag.NATRule.map((rule, index) => {
+                const flat = flattenNATRule(rule)
+                const ruleId = `nat-${rule.transactionId || rule.id || index}`
+                const isRuleExpanded = expandedRules.has(ruleId)
+                
+                return (
+                  <div 
+                    key={ruleId} 
+                    className="mb-4 border border-gray-200 rounded-lg overflow-hidden rule-section"
+                  >
+                    {/* Rule Header - Collapsible */}
+                    <button
+                      onClick={() => toggleRule(ruleId)}
+                      className="w-full flex items-center justify-between p-2.5 hover:bg-gray-50 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2 flex-1">
+                        {isRuleExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                        )}
+                        <div className="flex-1">
+                          <h3 className="text-sm font-bold text-gray-900 mb-0.5">
+                            Rule #{index + 1}: {flat.name || 'Unnamed NAT Rule'}
+                          </h3>
+                          {flat.description && (
+                            <p className="text-xs text-gray-600">{flat.description}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="ml-3 flex-shrink-0">
+                        <div className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          flat.status === 'Enable' || flat.status === 'Yes' || flat.status === 'ON'
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {(flat.status === 'Enable' || flat.status === 'Yes' || flat.status === 'ON') ? (
+                            <CheckCircle2 className="w-3 h-3 mr-0.5" />
+                          ) : (
+                            <XCircle className="w-3 h-3 mr-0.5" />
+                          )}
+                          {(flat.status === 'Enable' || flat.status === 'Yes' || flat.status === 'ON') ? 'Enabled' : 'Disabled'}
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Rule Details - Expandable */}
+                    {isRuleExpanded && (
+                      <div className="p-3 pt-0">
+                        {/* Rule Details Grid */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Basic Information */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="info" className="text-gray-600 text-base" />
+                              Basic Information
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField label="Transaction ID" value={rule.transactionId || 'N/A'} />
+                              <ReportField label="NAT Type" value={flat.natType || 'N/A'} />
+                              <ReportField label="IP Family" value={flat.ipFamily || 'N/A'} />
+                              <ReportField label="Position" value={flat.position || 'N/A'} />
+                              {flat.after && <ReportField label="Positioned After" value={flat.after} />}
+                            </div>
+                          </div>
+
+                          {/* Action & Traffic Control */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="bolt" className="text-gray-600 text-base" />
+                              Action & Traffic Control
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField 
+                                label="Action" 
+                                value={flat.action || 'N/A'}
+                                highlight={flat.action === 'Accept' ? 'green' : null}
+                              />
+                              <ReportField label="Log Traffic" value={flat.logTraffic || 'Disable'} />
+                              <ReportField label="Schedule" value={flat.schedule || 'All The Time'} />
+                            </div>
+                          </div>
+
+                          {/* Source Configuration */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="login" className="text-gray-600 text-base" />
+                              Source Configuration
+                            </h4>
+                            <div className="space-y-1">
+                              {flat.sourceZones && (
+                                <ReportField label="Source Zones" value={flat.sourceZones} />
+                              )}
+                              {flat.sourceNetworks && (
+                                <ReportField label="Source Networks" value={flat.sourceNetworks} />
+                              )}
+                              {!flat.sourceZones && !flat.sourceNetworks && (
+                                <ReportField label="Source" value="Any" />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Destination Configuration */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="logout" className="text-gray-600 text-base" />
+                              Destination Configuration
+                            </h4>
+                            <div className="space-y-1">
+                              {flat.destinationZones && (
+                                <ReportField label="Destination Zones" value={flat.destinationZones} />
+                              )}
+                              {flat.destinationNetworks && (
+                                <ReportField label="Destination Networks" value={flat.destinationNetworks} />
+                              )}
+                              {flat.services && (
+                                <ReportField label="Services/Ports" value={flat.services} />
+                              )}
+                              {!flat.destinationZones && !flat.destinationNetworks && (
+                                <ReportField label="Destination" value="Any" />
+                              )}
+                            </div>
+                          </div>
+
+                          {/* NAT Translation - Source */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="swap_horiz" className="text-gray-600 text-base" />
+                              Source NAT Translation
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField label="Original Source" value={flat.originalSource || 'N/A'} />
+                              <ReportField label="Translated Source" value={flat.translatedSource || 'N/A'} />
+                            </div>
+                          </div>
+
+                          {/* NAT Translation - Destination */}
+                          <div>
+                            <h4 className="font-semibold text-gray-900 uppercase text-xs tracking-wider border-b border-gray-300 pb-1 mb-2 flex items-center gap-1">
+                              <Icon name="swap_horiz" className="text-gray-600 text-base" />
+                              Destination NAT Translation
+                            </h4>
+                            <div className="space-y-1">
+                              <ReportField label="Original Destination" value={flat.originalDestination || 'N/A'} />
+                              <ReportField label="Translated Destination" value={flat.translatedDestination || 'N/A'} />
+                              {flat.originalService && (
+                                <ReportField label="Original Service" value={flat.originalService} />
+                              )}
+                              {flat.translatedService && (
+                                <ReportField label="Translated Service" value={flat.translatedService} />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </CollapsibleSection>
+        </div>
+      )}
+
         {/* Host Objects - Section 2 */}
         {((sectionVisibility.ipHosts !== false && data.ipHosts?.length) || 
           (sectionVisibility.fqdnHosts !== false && data.fqdnHosts?.length) || 
@@ -1630,8 +2112,12 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="dns" className={getEntityColor('ipHosts')} />
+                  <Icon name="dns" className="text-gray-600" />
                   <span>Host Objects</span>
+                  {(() => {
+                    const hostCount = (data.ipHosts?.length || 0) + (data.fqdnHosts?.length || 0) + (data.macHosts?.length || 0)
+                    return hostCount > 0 ? <span className="text-gray-500 font-normal">({hostCount})</span> : null
+                  })()}
                 </div>
               }
               isExpanded={expandedMainSections.referencedObjects}
@@ -1673,8 +2159,12 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="group_work" className={getEntityColor('groupsSection')} />
+                  <Icon name="group_work" className="text-gray-600" />
                   <span>Groups</span>
+                  {(() => {
+                    const groupsCount = (data.fqdnHostGroups?.length || 0) + (data.ipHostGroups?.length || 0) + (data.serviceGroups?.length || 0) + (data.groups?.length || 0)
+                    return groupsCount > 0 ? <span className="text-gray-500 font-normal">({groupsCount})</span> : null
+                  })()}
                 </div>
               }
               isExpanded={expandedMainSections.groupsSection}
@@ -1727,8 +2217,11 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="construction" className={getEntityColor('services')} />
+                  <Icon name="construction" className="text-gray-600" />
                   <span>Services</span>
+                  {data.services?.length > 0 && (
+                    <span className="text-gray-500 font-normal">({data.services.length})</span>
+                  )}
                 </div>
               }
               isExpanded={expandedMainSections.servicesSection}
@@ -1753,8 +2246,18 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="security" className={getEntityColor('securityPolicies')} />
+                  <Icon name="security" className="text-gray-600" />
                   <span>Security Policies</span>
+                  {(() => {
+                    const securityCount = (data.entitiesByTag?.WebFilterPolicy?.length || 0) + 
+                                         (data.entitiesByTag?.Schedule?.length || 0) + 
+                                         (data.entitiesByTag?.Country?.length || 0) + 
+                                         (data.entitiesByTag?.IPSPolicy?.length || 0) + 
+                                         (data.entitiesByTag?.IntrusionPrevention?.length || 0) + 
+                                         (data.entitiesByTag?.VirusScanning?.length || 0) + 
+                                         (data.entitiesByTag?.WebFilter?.length || 0)
+                    return securityCount > 0 ? <span className="text-gray-500 font-normal">({securityCount})</span> : null
+                  })()}
                 </div>
               }
               isExpanded={expandedMainSections.securityPolicies}
@@ -1830,8 +2333,14 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="verified" style={{ color: '#005BC8' }} />
+                  <Icon name="verified" className="text-gray-600" />
                   <span>Certificates</span>
+                  {(() => {
+                    const certCount = (data.entitiesByTag?.CertificateAuthority?.length || 0) + 
+                                     (data.entitiesByTag?.SelfSignedCertificate?.length || 0) + 
+                                     (data.entitiesByTag?.Certificate?.length || 0)
+                    return certCount > 0 ? <span className="text-gray-500 font-normal">({certCount})</span> : null
+                  })()}
                 </div>
               }
               isExpanded={expandedMainSections.certificates}
@@ -1876,8 +2385,15 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
             <CollapsibleSection
               title={
                 <div className="flex items-center gap-2">
-                  <Icon name="router" style={{ color: '#005BC8' }} />
+                  <Icon name="router" className="text-gray-600" />
                   <span>Network Configuration</span>
+                  {(() => {
+                    const networkCount = (data.entitiesByTag?.Zone?.length || 0) + 
+                                        (data.entitiesByTag?.Network?.length || 0) + 
+                                        (data.entitiesByTag?.REDDevice?.length || 0) + 
+                                        (data.entitiesByTag?.WirelessAccessPoint?.length || 0)
+                    return networkCount > 0 ? <span className="text-gray-500 font-normal">({networkCount})</span> : null
+                  })()}
                 </div>
               }
               isExpanded={expandedMainSections.networkConfig}
@@ -1931,13 +2447,13 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
               <CollapsibleSection
                 title={
                   <div className="flex items-center gap-2">
-                    <Icon name="settings_ethernet" className={getEntityColor('portsWithVlans')} />
+                    <Icon name="settings_ethernet" className="text-gray-600" />
                     <span>Interfaces & Network</span>
                     <span className="text-gray-500 font-normal">
                       ({Math.max(
                         data.entitiesByTag?.Interface?.length || 0,
                         Object.keys(data.portsWithEntities || {}).length
-                      ) + (data.lagsWithMembers ? Object.keys(data.lagsWithMembers).length : 0) + (data.entitiesByTag?.WirelessNetwork?.length || 0)} interfaces/LAGs/Wireless)
+                      ) + (data.lagsWithMembers ? Object.keys(data.lagsWithMembers).length : 0) + (data.entitiesByTag?.WirelessNetwork?.length || 0)})
                     </span>
                   </div>
                 }
@@ -2046,7 +2562,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                             <div className="bg-gradient-to-r from-orange-50 to-amber-50 px-4 py-3 border-b border-gray-200">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                  <Icon name="hub" className="text-orange-600 text-lg" />
+                                  <Icon name="hub" className="text-gray-600 text-lg" />
                                   <h4 className="font-semibold text-base text-gray-900">{itemName}</h4>
                                   {lag.fields?.InterfaceStatus && (
                                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -2117,8 +2633,8 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                             {/* Member Interfaces Container */}
                             {hasMembers && (
                               <div className="px-4 py-3">
-                                <div className="flex items-center gap-1.5 mb-2 ml-1">
-                                  <Icon name="settings_ethernet" className="text-blue-600 text-sm" />
+                                  <div className="flex items-center gap-1.5 mb-2 ml-1">
+                                  <Icon name="settings_ethernet" className="text-gray-600 text-sm" />
                                   <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                                     Member Interfaces ({members.length})
                                   </h5>
@@ -2185,7 +2701,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                             <div className="bg-gradient-to-r from-teal-50 to-cyan-50 px-4 py-3 border-b border-gray-200">
                               <div className="flex items-center justify-between mb-2">
                                 <div className="flex items-center gap-2">
-                                  <Icon name="wifi" className="text-teal-600 text-lg" />
+                                  <Icon name="wifi" className="text-gray-600 text-lg" />
                                   <h4 className="font-semibold text-base text-gray-900">{itemName}</h4>
                                   {wirelessNetwork.fields?.Status && (
                                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -2254,12 +2770,13 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                       // Regular Interface rendering
                       const interfaceName = itemName
                       const interfaceEntity = interfaceMap.get(interfaceName)
-                      const portData = portsWithEntities[interfaceName] || { vlans: [], aliases: [] }
+                      const portData = portsWithEntities[interfaceName] || { vlans: [], aliases: [], xfrmInterfaces: [] }
                       const hasVlans = portData.vlans && portData.vlans.length > 0
                       const hasAliases = portData.aliases && portData.aliases.length > 0
+                      const hasXfrmInterfaces = portData.xfrmInterfaces && portData.xfrmInterfaces.length > 0
                       
-                      // Only show if there's an interface entity OR there are VLANs/Aliases
-                      if (!interfaceEntity && !hasVlans && !hasAliases) {
+                      // Only show if there's an interface entity OR there are VLANs/Aliases/XFRMInterfaces
+                      if (!interfaceEntity && !hasVlans && !hasAliases && !hasXfrmInterfaces) {
                         return null
                       }
                       
@@ -2267,13 +2784,13 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                         <div key={interfaceName} className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow">
                           {/* Parent Interface - Compact Header */}
                           {interfaceEntity && (
-                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-gray-200">
-                              <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                  <Icon name="settings_ethernet" className="text-blue-600 text-lg" />
-                                  <h4 className="font-semibold text-base text-gray-900">{interfaceName}</h4>
+                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 border-b border-gray-200">
+                              <div className="flex items-center justify-between mb-1">
+                                <div className="flex items-center gap-1.5">
+                                  <Icon name="settings_ethernet" className="text-gray-600 text-base" />
+                                  <h4 className="font-semibold text-sm text-gray-900">{interfaceName}</h4>
                                   {interfaceEntity.fields?.InterfaceStatus && (
-                                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
                                       interfaceEntity.fields.InterfaceStatus === 'ON' 
                                         ? 'bg-green-100 text-green-700' 
                                         : 'bg-gray-100 text-gray-600'
@@ -2282,14 +2799,14 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                                     </span>
                                   )}
                                 </div>
-                                {(hasVlans || hasAliases) && (
+                                {(hasVlans || hasAliases || hasXfrmInterfaces) && (
                                   <span className="text-xs text-gray-600 font-medium">
-                                    {portData.vlans?.length || 0} VLAN{portData.vlans?.length !== 1 ? 's' : ''}, {portData.aliases?.length || 0} Alias{portData.aliases?.length !== 1 ? 'es' : ''}
+                                    {portData.vlans?.length || 0} VLAN{portData.vlans?.length !== 1 ? 's' : ''}, {portData.aliases?.length || 0} Alias{portData.aliases?.length !== 1 ? 'es' : ''}{hasXfrmInterfaces ? `, ${portData.xfrmInterfaces?.length || 0} XFRM` : ''}
                                   </span>
                                 )}
                               </div>
                               {/* Key Interface Fields - Compact Display */}
-                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-1.5 text-xs">
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-0.5 text-xs">
                                 {interfaceEntity.fields?.IPAddress && (
                                   <div className="flex items-center gap-1.5">
                                     <span className="text-gray-500 font-medium">IP:</span>
@@ -2335,45 +2852,45 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                             </div>
                           )}
                           
-                          {/* Show interface name even if no interface entity exists but has VLANs/Aliases */}
-                          {!interfaceEntity && (hasVlans || hasAliases) && (
-                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-3 border-b border-gray-200">
+                          {/* Show interface name even if no interface entity exists but has VLANs/Aliases/XFRMInterfaces */}
+                          {!interfaceEntity && (hasVlans || hasAliases || hasXfrmInterfaces) && (
+                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 border-b border-gray-200">
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Icon name="settings_ethernet" className="text-blue-600 text-lg" />
-                                  <h4 className="font-semibold text-base text-gray-900">{interfaceName}</h4>
+                                <div className="flex items-center gap-1.5">
+                                  <Icon name="settings_ethernet" className="text-gray-600 text-base" />
+                                  <h4 className="font-semibold text-sm text-gray-900">{interfaceName}</h4>
                                 </div>
                                 <span className="text-xs text-gray-600 font-medium">
-                                  {portData.vlans?.length || 0} VLAN{portData.vlans?.length !== 1 ? 's' : ''}, {portData.aliases?.length || 0} Alias{portData.aliases?.length !== 1 ? 'es' : ''}
+                                  {portData.vlans?.length || 0} VLAN{portData.vlans?.length !== 1 ? 's' : ''}, {portData.aliases?.length || 0} Alias{portData.aliases?.length !== 1 ? 'es' : ''}{hasXfrmInterfaces ? `, ${portData.xfrmInterfaces?.length || 0} XFRM` : ''}
                               </span>
                               </div>
                             </div>
                           )}
                           
                           {/* Child Interfaces Container */}
-                          {(hasVlans || hasAliases) && (
-                            <div className="px-4 py-3 space-y-3">
+                          {(hasVlans || hasAliases || hasXfrmInterfaces) && (
+                            <div className="px-3 py-2 space-y-2">
                           {/* VLANs nested below Interface */}
                           {hasVlans && (
                                 <div>
-                                  <div className="flex items-center gap-1.5 mb-2 ml-1">
-                                    <Icon name="router" className="text-purple-600 text-sm" />
+                                  <div className="flex items-center gap-1 mb-1 ml-1">
+                                    <Icon name="router" className="text-gray-600 text-xs" />
                                     <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                                 VLANs ({portData.vlans.length})
                               </h5>
                                   </div>
-                                  <div className="space-y-2 ml-6">
+                                  <div className="space-y-1.5 ml-4">
                                 {portData.vlans.map((vlan, idx) => (
-                                      <div key={`${interfaceName}-vlan-${idx}`} className="bg-purple-50 border-l-[3px] border-purple-400 rounded-r p-2.5 hover:bg-purple-100 transition-colors">
-                                        <div className="flex items-center gap-2 mb-1.5">
-                                          <span className="font-semibold text-sm text-gray-900">{vlan.name || `VLAN ${idx + 1}`}</span>
+                                      <div key={`${interfaceName}-vlan-${idx}`} className="bg-purple-50 border-l-[3px] border-purple-400 rounded-r p-1.5 hover:bg-purple-100 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="font-semibold text-xs text-gray-900">{vlan.name || `VLAN ${idx + 1}`}</span>
                                           {vlan.fields?.VLANID && (
-                                            <span className="text-xs px-1.5 py-0.5 bg-purple-200 text-purple-800 rounded font-mono">
+                                            <span className="text-xs px-1 py-0.5 bg-purple-200 text-purple-800 rounded font-mono">
                                               ID: {vlan.fields.VLANID}
                                             </span>
                                           )}
                                           {vlan.fields?.InterfaceStatus && (
-                                            <span className={`text-xs px-1.5 py-0.5 rounded ${
+                                            <span className={`text-xs px-1 py-0.5 rounded ${
                                               vlan.fields.InterfaceStatus === 'ON' 
                                                 ? 'bg-green-100 text-green-700' 
                                                 : 'bg-gray-100 text-gray-600'
@@ -2382,7 +2899,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                                             </span>
                                           )}
                                         </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-0.5 text-xs">
                                           {vlan.fields?.IPAddress && (
                                             <div className="flex items-center gap-1.5">
                                               <span className="text-gray-500 font-medium">IP:</span>
@@ -2414,19 +2931,19 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                           {/* Aliases nested below Interface */}
                           {hasAliases && (
                                 <div>
-                                  <div className="flex items-center gap-1.5 mb-2 ml-1">
-                                    <Icon name="label" className="text-green-600 text-sm" />
+                                  <div className="flex items-center gap-1 mb-1 ml-1">
+                                    <Icon name="label" className="text-gray-600 text-xs" />
                                     <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
                                 Aliases ({portData.aliases.length})
                               </h5>
                                   </div>
-                                  <div className="space-y-2 ml-6">
+                                  <div className="space-y-1.5 ml-4">
                                 {portData.aliases.map((alias, idx) => (
-                                      <div key={`${interfaceName}-alias-${idx}`} className="bg-green-50 border-l-[3px] border-green-400 rounded-r p-2.5 hover:bg-green-100 transition-colors">
-                                        <div className="flex items-center gap-2 mb-1.5">
-                                          <span className="font-semibold text-sm text-gray-900">{alias.name || `Alias ${idx + 1}`}</span>
+                                      <div key={`${interfaceName}-alias-${idx}`} className="bg-green-50 border-l-[3px] border-green-400 rounded-r p-1.5 hover:bg-green-100 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="font-semibold text-xs text-gray-900">{alias.name || `Alias ${idx + 1}`}</span>
                                         </div>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-0.5 text-xs">
                                           {/* IPv4 Address */}
                                           {(alias.fields?.IPFamily === 'IPv4' || (!alias.fields?.IPFamily && alias.fields?.IPAddress)) && alias.fields?.IPAddress && (
                                             <div className="flex items-center gap-1.5">
@@ -2460,6 +2977,83 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                               </div>
                                 </div>
                               )}
+                          
+                          {/* XFRM Interfaces nested below Interface */}
+                          {hasXfrmInterfaces && (
+                                <div>
+                                  <div className="flex items-center gap-1 mb-1 ml-1">
+                                    <Icon name="vpn_key" className="text-gray-600 text-xs" />
+                                    <h5 className="text-xs font-semibold text-gray-700 uppercase tracking-wide">
+                                XFRM Interfaces ({portData.xfrmInterfaces.length})
+                              </h5>
+                                  </div>
+                                  <div className="space-y-1.5 ml-4">
+                                {portData.xfrmInterfaces.map((xfrm, idx) => (
+                                      <div key={`${interfaceName}-xfrm-${idx}`} className="bg-orange-50 border-l-[3px] border-orange-400 rounded-r p-1.5 hover:bg-orange-100 transition-colors">
+                                        <div className="flex items-center gap-1.5 mb-1">
+                                          <span className="font-semibold text-xs text-gray-900">{xfrm.name || xfrm.fields?.Name || `XFRM ${idx + 1}`}</span>
+                                          {xfrm.fields?.InterfaceStatus && (
+                                            <span className={`text-xs px-1 py-0.5 rounded ${
+                                              xfrm.fields.InterfaceStatus === 'ON' 
+                                                ? 'bg-green-100 text-green-700' 
+                                                : 'bg-gray-100 text-gray-600'
+                                            }`}>
+                                              {xfrm.fields.InterfaceStatus}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-x-3 gap-y-0.5 text-xs">
+                                          {xfrm.fields?.IPv4Address && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">IPv4:</span>
+                                              <span className="text-gray-900 font-mono">{xfrm.fields.IPv4Address}</span>
+                                              {xfrm.fields?.Netmask && netmaskToCIDR(xfrm.fields.Netmask) && (
+                                                <span className="text-gray-500">/{netmaskToCIDR(xfrm.fields.Netmask)}</span>
+                                              )}
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.Connectionname && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">Connection:</span>
+                                              <span className="text-gray-900">{xfrm.fields.Connectionname}</span>
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.Hardware && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">Hardware:</span>
+                                              <span className="text-gray-900 font-mono text-xs">{xfrm.fields.Hardware}</span>
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.IPv4Configuration && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">IPv4 Config:</span>
+                                              <span className="text-gray-900">{xfrm.fields.IPv4Configuration}</span>
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.IPv6Configuration && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">IPv6 Config:</span>
+                                              <span className="text-gray-900">{xfrm.fields.IPv6Configuration}</span>
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.MTU && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">MTU:</span>
+                                              <span className="text-gray-900">{xfrm.fields.MTU}</span>
+                                            </div>
+                                          )}
+                                          {xfrm.fields?.MSS && typeof xfrm.fields.MSS === 'object' && xfrm.fields.MSS?.MSSValue && (
+                                            <div className="flex items-center gap-1.5">
+                                              <span className="text-gray-500 font-medium">MSS:</span>
+                                              <span className="text-gray-900">{xfrm.fields.MSS.MSSValue}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                  </div>
+                                ))}
+                              </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -2477,7 +3071,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
           Object.entries(data.entitiesByTag)
             .filter(([tag]) => ![
               'IPHost','FQDNHost','MACHost','Service','Services','Group','FQDNHostGroup','IPHostGroup','ServiceGroup',
-              'Country','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork' // Exclude VLAN/Alias/Interface/LAG/WirelessNetwork as they're shown in combined structure
+              'Country','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork','XFRMInterface','NATRule' // Exclude VLAN/Alias/Interface/LAG/WirelessNetwork/XFRMInterface/NATRule as they're shown in combined structure
             ].includes(tag))
             .filter(([tag]) => sectionVisibility[tag] !== false && data.entitiesByTag[tag]?.length > 0)
             .map(([tag, items]) => (
@@ -2485,7 +3079,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                 <CollapsibleSection
                   title={
                     <div className="flex items-center gap-2">
-                      <Icon name={getEntityIcon(tag)} className={getEntityColor(tag)} />
+                      <Icon name={getEntityIcon(tag)} className="text-gray-600" />
                       <span>{tag}</span>
                       <span className="text-gray-500 font-normal">({items.length})</span>
                     </div>

@@ -1,18 +1,31 @@
 import { useState, useEffect } from 'react'
-import { Zap, X, Lock, FileText, GitCompare, Network } from 'lucide-react'
+import { Zap, X, Lock, FileText, GitCompare, Network, Search } from 'lucide-react'
 import UploadZone from './components/UploadZone'
 import DualUploadZone from './components/DualUploadZone'
 import ReportView from './components/ReportView'
 import DiffView from './components/DiffView'
 import ExportButton from './components/ExportButton'
 import ConfigurationTree from './components/ConfigurationTree'
+import ConfigurationAnalyzer from './components/ConfigurationAnalyzer'
 import { parseEntitiesXML } from './utils/xmlParser'
 import { compareXMLFiles } from './utils/xmlDiff'
 import { getThemeStyles, combineStyles } from './utils/themeUtils'
 import theme from './theme'
 
 // Sophos logo - using icon from public folder
-const sophosLogoUrl = '/sophos-icon-white.svg'
+// In production with Electron, use relative path from base
+// In development, use absolute path for Vite dev server
+const getSophosLogoUrl = () => {
+  if (import.meta.env.PROD) {
+    // Production: Vite base is './', so public files are at root
+    // Vite copies public folder files to dist root during build
+    return './sophos-icon-white.svg'
+  }
+  // Development: absolute path works with Vite dev server
+  return '/sophos-icon-white.svg'
+}
+
+const sophosLogoUrl = getSophosLogoUrl()
 
 function App() {
   const [mode, setMode] = useState(null) // null = home, 'report' = report mode, 'diff' = diff mode
@@ -25,6 +38,8 @@ function App() {
   const [xmlContent, setXmlContent] = useState(null) // Store raw XML for Configuration Tree
   const [showConfigTree, setShowConfigTree] = useState(false) // Toggle for Configuration Tree view
   const [configTreeLoading, setConfigTreeLoading] = useState(false) // Loading state for Configuration Tree
+  const [showConfigAnalyzer, setShowConfigAnalyzer] = useState(false) // Toggle for Configuration Analyzer view
+  const [configAnalyzerLoading, setConfigAnalyzerLoading] = useState(false) // Loading state for Configuration Analyzer
   
   // Privacy notice state - check if user has dismissed it
   const [showPrivacyNotice, setShowPrivacyNotice] = useState(() => {
@@ -128,6 +143,7 @@ function App() {
     setSectionVisibility({})
     setXmlContent(null)
     setShowConfigTree(false)
+    setShowConfigAnalyzer(false)
   }
 
   // Get all rules for report view (no filtering)
@@ -256,15 +272,43 @@ function App() {
               <img 
                 src={sophosLogoUrl} 
                 alt="Sophos" 
-                className="h-7 w-auto"
+                className="h-7 w-auto sophos-logo-img"
                 style={{ maxHeight: '32px' }}
                 onError={(e) => {
-                  // Fallback to Bolt icon if logo not found
-                  e.target.style.display = 'none'
-                  e.target.nextElementSibling.style.display = 'block'
+                  const img = e.target
+                  const currentSrc = img.getAttribute('src') || img.src
+                  
+                  // Try fallback paths in production
+                  if (import.meta.env.PROD) {
+                    if (currentSrc === './sophos-icon-white.svg' || currentSrc.endsWith('sophos-icon-white.svg')) {
+                      // Try public folder path
+                      img.src = './public/sophos-icon-white.svg'
+                      return
+                    }
+                    if (currentSrc.includes('public/sophos-icon-white.svg')) {
+                      // Try without ./ prefix
+                      img.src = 'sophos-icon-white.svg'
+                      return
+                    }
+                  }
+                  
+                  // All paths failed, show bolt icon
+                  console.error('Failed to load Sophos logo from all paths. Tried:', currentSrc)
+                  img.style.display = 'none'
+                  const fallback = img.nextElementSibling
+                  if (fallback && fallback.classList.contains('sophos-logo-fallback')) {
+                    fallback.style.display = 'block'
+                  }
+                }}
+                onLoad={() => {
+                  // Hide fallback if image loads successfully
+                  const fallback = document.querySelector('.sophos-logo-fallback')
+                  if (fallback) {
+                    fallback.style.display = 'none'
+                  }
                 }}
               />
-              <Zap className="w-7 h-7" style={{ display: 'none', color: theme.components.header.text }} />
+              <Zap className="w-7 h-7 sophos-logo-fallback" style={{ display: 'none', color: theme.components.header.text }} />
               <div>
                 <h1 className="text-xl font-semibold" style={combineStyles(
                   { color: 'components.header.text', fontFamily: 'typography.fontFamily.primary' }
@@ -305,7 +349,7 @@ function App() {
             <div className="text-center mb-16 mt-8">
               <div className="inline-flex items-center justify-center mb-6">
                 <div className="p-3 rounded-full" style={{ background: theme.colors.primary.gradient }}>
-                  <Zap className="w-10 h-10 text-white" />
+                  <Search className="w-10 h-10 text-white" />
                 </div>
               </div>
               <h1 className="text-4xl font-bold mb-4" style={combineStyles(
@@ -481,7 +525,7 @@ function App() {
           </div>
         )}
 
-        {mode === 'report' && parsedData && !showConfigTree && (
+        {mode === 'report' && parsedData && !showConfigTree && !showConfigAnalyzer && (
           <div className="bg-white p-8 print:p-4" style={combineStyles(
             { boxShadow: 'shadows.md', borderRadius: 'borderRadius.md' }
           )}>
@@ -523,7 +567,46 @@ function App() {
                   ) : (
                     <>
                       <Network className="w-4 h-4" />
-                      Configuration Tree
+                      Usage Reference
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    setConfigAnalyzerLoading(true)
+                    setShowConfigAnalyzer(true)
+                    // Loading will be handled by ConfigurationAnalyzer component
+                  }}
+                  disabled={configAnalyzerLoading}
+                  className="px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={combineStyles(
+                    { 
+                      color: 'components.button.secondary.text',
+                      backgroundColor: 'components.button.secondary.bg',
+                      fontFamily: 'typography.fontFamily.primary',
+                      border: `1px solid ${theme.colors.border.medium}`
+                    }
+                  )}
+                  onMouseEnter={(e) => {
+                    if (!configAnalyzerLoading) {
+                      e.target.style.backgroundColor = theme.components.button.secondary.hover
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!configAnalyzerLoading) {
+                      e.target.style.backgroundColor = theme.components.button.secondary.bg
+                    }
+                  }}
+                >
+                  {configAnalyzerLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
+                      <span>Loading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4" />
+                      Configuration Analyzer
                     </>
                   )}
                 </button>
@@ -555,6 +638,19 @@ function App() {
                 setConfigTreeLoading(false)
               }}
               onLoadingChange={setConfigTreeLoading}
+            />
+          </div>
+        )}
+
+        {mode === 'report' && parsedData && showConfigAnalyzer && (
+          <div className="max-w-7xl mx-auto">
+            <ConfigurationAnalyzer 
+              parsedData={parsedData}
+              onClose={() => {
+                setShowConfigAnalyzer(false)
+                setConfigAnalyzerLoading(false)
+              }}
+              onLoadingChange={setConfigAnalyzerLoading}
             />
           </div>
         )}
