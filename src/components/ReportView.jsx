@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef, memo, Suspense, lazy } from 'react'
 import { flattenFirewallRule, flattenSSLTLSInspectionRule, flattenNATRule, formatTagName } from '../utils/xmlParser'
 import { Zap, CheckCircle2, XCircle, ChevronRight, ChevronDown, Search } from 'lucide-react'
 import { useTableColumnResize } from '../utils/useTableColumnResize'
@@ -80,8 +80,8 @@ const useTableFilters = (items) => {
   return { columnFilters, setColumnFilters, filterItems, getSearchableText }
 }
 
-// Reusable filter input component
-const FilterInput = ({ value, onChange, placeholder = 'Filter...', ariaLabel }) => (
+// Reusable filter input component - memoized to prevent recreation
+const FilterInput = memo(({ value, onChange, placeholder = 'Filter...', ariaLabel }) => (
   <div className="relative">
     <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
     <input
@@ -97,7 +97,12 @@ const FilterInput = ({ value, onChange, placeholder = 'Filter...', ariaLabel }) 
       aria-label={ariaLabel}
     />
   </div>
-)
+))
+
+// Icon component - defined outside to prevent recreation on each render
+const Icon = memo(({ name, className = '' }) => (
+  <span className={`material-symbols-outlined align-middle ${className}`}>{name}</span>
+))
 
 export default function ReportView({ data, filteredRules, sectionVisibility = {}, onToggleSection, onSelectAll, onDeselectAll, isSelectionLoading = false }) {
   // State for search in sidebar
@@ -122,6 +127,71 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
   // State for logo loading
   const [logoLoaded, setLogoLoaded] = useState(false)
   const [logoError, setLogoError] = useState(false)
+  
+  // Progressive loading state for large datasets
+  const [isInitialLoading, setIsInitialLoading] = useState(true)
+  const [loadingProgress, setLoadingProgress] = useState(0)
+  
+  // Calculate total items count for progress indicator
+  const totalItemsCount = useMemo(() => {
+    if (!data) return 0
+    let count = (filteredRules?.length || 0)
+    if (data.entitiesByTag) {
+      Object.values(data.entitiesByTag).forEach(items => {
+        count += items?.length || 0
+      })
+    }
+    return count
+  }, [data, filteredRules])
+  
+  // Progressive loading effect - yields to main thread while loading large datasets
+  useEffect(() => {
+    if (!data) {
+      setIsInitialLoading(false)
+      return
+    }
+    
+    // For smaller datasets (< 500 items), skip loading state
+    if (totalItemsCount < 500) {
+      setIsInitialLoading(false)
+      setLoadingProgress(100)
+      return
+    }
+    
+    setIsInitialLoading(true)
+    setLoadingProgress(0)
+    
+    // Use requestIdleCallback for progressive loading
+    const progressSteps = [20, 40, 60, 80, 100]
+    let stepIndex = 0
+    
+    const scheduleNextStep = () => {
+      if (stepIndex >= progressSteps.length) {
+        setIsInitialLoading(false)
+        return
+      }
+      
+      const nextStep = () => {
+        setLoadingProgress(progressSteps[stepIndex])
+        stepIndex++
+        if (stepIndex < progressSteps.length) {
+          scheduleNextStep()
+        } else {
+          // Final step - hide loading
+          setTimeout(() => setIsInitialLoading(false), 50)
+        }
+      }
+      
+      if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(nextStep, { timeout: 100 })
+      } else {
+        setTimeout(nextStep, 50)
+      }
+    }
+    
+    // Start progressive loading
+    scheduleNextStep()
+  }, [data, totalItemsCount])
 
   // State for search input values (what user types)
   const [firewallRulesSearch, setFirewallRulesSearch] = useState('')
@@ -503,10 +573,6 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     }
   }, [onSelectAll])
 
-  const Icon = ({ name, className = '' }) => (
-    <span className={`material-symbols-outlined align-middle ${className}`}>{name}</span>
-  )
-
   // List of singleton entity types (entities that typically appear only once in configuration)
   const SINGLETON_ENTITIES = [
     // System Configuration
@@ -563,27 +629,45 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
     )
   }
 
-  // Collapsible Section Component
-  const CollapsibleSection = ({ title, isExpanded, onToggle, children, className = '', style = {} }) => (
-    <div className={`${className}`} style={style}>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between p-2 hover:bg-gray-50 transition-colors text-left border-b border-gray-200"
-      >
-        <div className="font-semibold text-xs text-gray-900 flex-1 text-left">{title}</div>
-        {isExpanded ? (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+  // Collapsible Section Component with Lazy Rendering
+  // Uses render prop pattern to defer children evaluation until expanded
+  const CollapsibleSection = ({ title, isExpanded, onToggle, children, renderContent, className = '', style = {} }) => {
+    // Track if content has ever been rendered (for keeping it mounted after first expansion)
+    const [hasBeenExpanded, setHasBeenExpanded] = useState(isExpanded)
+    
+    useEffect(() => {
+      if (isExpanded && !hasBeenExpanded) {
+        setHasBeenExpanded(true)
+      }
+    }, [isExpanded, hasBeenExpanded])
+    
+    // Determine if we should render content
+    // - If renderContent function is provided, use lazy evaluation (only call when needed)
+    // - If children is provided directly, fall back to old behavior (for backward compatibility)
+    const shouldRenderContent = hasBeenExpanded || isExpanded
+    
+    return (
+      <div className={`${className}`} style={style}>
+        <button
+          onClick={onToggle}
+          className="w-full flex items-center justify-between p-2 hover:bg-gray-50 transition-colors text-left border-b border-gray-200"
+        >
+          <div className="font-semibold text-xs text-gray-900 flex-1 text-left">{title}</div>
+          {isExpanded ? (
+            <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+          )}
+        </button>
+        {/* Only render content if it has ever been expanded */}
+        {shouldRenderContent && (
+          <div className="p-3" style={{ display: isExpanded ? 'block' : 'none' }}>
+            {renderContent ? renderContent() : children}
+          </div>
         )}
-      </button>
-      {isExpanded && (
-        <div className="p-3">
-          {children}
-        </div>
-      )}
-    </div>
-  )
+      </div>
+    )
+  }
 
   // Helper to check if a value represents a boolean/enable-disable state
   const isBooleanValue = (value) => {
@@ -11870,6 +11954,43 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       data.entitiesByTag[tag]?.length > 0
   )) {
     tocSections.push({ name: 'Additional Objects', icon: 'view_list', id: 'additional-objects' })
+  }
+
+  // Show loading screen for large datasets during initial render
+  if (isInitialLoading && totalItemsCount >= 500) {
+    return (
+      <div className="report-container bg-white" id="report-view" style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="text-center w-full max-w-md p-8">
+          <div className="inline-flex items-center justify-center mb-6">
+            <div className="p-3 rounded-full" style={{ background: 'linear-gradient(135deg, #005BC8 0%, #0073e6 100%)' }}>
+              <Zap className="w-10 h-10 text-white animate-pulse" />
+            </div>
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2" style={{ fontFamily: 'Arial, Helvetica, sans-serif' }}>
+            Preparing report
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Processing {totalItemsCount.toLocaleString()} configuration items...
+          </p>
+          {/* Progress bar */}
+          <div 
+            className="w-full h-2 rounded-full overflow-hidden mb-2"
+            style={{ backgroundColor: '#e5e7eb' }}
+          >
+            <div 
+              className="h-full rounded-full transition-all duration-300 ease-out"
+              style={{ 
+                width: `${loadingProgress}%`,
+                backgroundColor: '#005BC8'
+              }}
+            />
+          </div>
+          <p className="text-xs text-gray-500">
+            {loadingProgress}% complete
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (

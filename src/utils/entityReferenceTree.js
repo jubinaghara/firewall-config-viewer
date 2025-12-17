@@ -6,9 +6,201 @@
  */
 
 /**
- * Build a reference tree for all entities in the XML
+ * Helper to yield control back to the browser to prevent "page not responding"
+ * Uses requestIdleCallback when available, falls back to setTimeout
+ */
+function yieldToMain() {
+  return new Promise(resolve => {
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(resolve, { timeout: 50 })
+    } else {
+      setTimeout(resolve, 0)
+    }
+  })
+}
+
+/**
+ * Build a reference tree for all entities in the XML (ASYNC version with progress)
+ * This version yields control periodically to prevent browser freeze
+ * @param {string} xmlString - The XML content as a string
+ * @param {Function} onProgress - Progress callback (0-100)
+ * @returns {Promise<Object>} - Map of entity names to their reference trees
+ */
+export async function buildEntityReferenceTreeAsync(xmlString, onProgress = () => {}) {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
+  
+  // Check for parsing errors
+  const parseError = xmlDoc.querySelector('parsererror');
+  if (parseError) {
+    throw new Error('Invalid XML format: ' + parseError.textContent);
+  }
+
+  onProgress(5) // Parsing complete
+
+  // Step 1: Extract all entities with Name tags
+  const entities = extractAllEntities(xmlDoc);
+  onProgress(15) // Extraction complete
+  
+  // Step 2: Build a map of entity names to their definitions
+  const entityMap = new Map();
+  entities.forEach(entity => {
+    if (entity.name && entity.name.trim()) {
+      const name = entity.name.trim();
+      if (!entityMap.has(name)) {
+        entityMap.set(name, []);
+      }
+      entityMap.get(name).push(entity);
+    }
+  });
+
+  onProgress(20) // Entity map built
+
+  // Step 3: Pre-build text node index for faster lookups (the key optimization)
+  const textNodeIndex = buildTextNodeIndex(xmlDoc);
+  onProgress(35) // Text index built
+
+  // Step 4: For each entity name, find all references (with chunking)
+  const referenceTree = {};
+  const entityNames = Array.from(entityMap.keys());
+  const totalEntities = entityNames.length;
+  const CHUNK_SIZE = 50; // Process 50 entities before yielding
+  
+  for (let i = 0; i < totalEntities; i++) {
+    const entityName = entityNames[i];
+    const entityDefs = entityMap.get(entityName);
+    
+    // Use optimized lookup with pre-built index
+    const references = findEntityReferencesOptimized(entityName, textNodeIndex, entityMap);
+    
+    // Get the primary tag (most common tag for this entity name)
+    const primaryTag = entityDefs.length > 0 ? entityDefs[0].tag : 'Unknown';
+    
+    // Only include entities that have one or more references
+    if (references.length > 0) {
+      referenceTree[entityName] = {
+        entityName,
+        primaryTag,
+        definitions: entityDefs,
+        references: references
+      };
+    }
+    
+    // Yield control every CHUNK_SIZE entities to keep UI responsive
+    if (i > 0 && i % CHUNK_SIZE === 0) {
+      const progress = 35 + Math.floor((i / totalEntities) * 60);
+      onProgress(Math.min(progress, 95));
+      await yieldToMain();
+    }
+  }
+  
+  onProgress(100);
+  return referenceTree;
+}
+
+/**
+ * Build an index of all text nodes for faster entity lookups
+ * This avoids walking the tree multiple times
+ * @param {Document} xmlDoc - The parsed XML document
+ * @returns {Map} - Map of text content to array of parent elements
+ */
+function buildTextNodeIndex(xmlDoc) {
+  const textNodeIndex = new Map();
+  
+  const walker = xmlDoc.createTreeWalker(
+    xmlDoc,
+    NodeFilter.SHOW_TEXT,
+    null,
+    false
+  );
+  
+  let node;
+  while (node = walker.nextNode()) {
+    const textContent = node.textContent.trim();
+    if (textContent) {
+      if (!textNodeIndex.has(textContent)) {
+        textNodeIndex.set(textContent, []);
+      }
+      textNodeIndex.get(textContent).push(node.parentElement);
+    }
+  }
+  
+  return textNodeIndex;
+}
+
+/**
+ * Find entity references using pre-built text node index (optimized)
+ * @param {string} entityName - The entity name to search for
+ * @param {Map} textNodeIndex - Pre-built index of text nodes
+ * @param {Map} entityMap - Map of all entity names to their definitions
+ * @returns {Array} - Array of reference objects
+ */
+function findEntityReferencesOptimized(entityName, textNodeIndex, entityMap) {
+  const references = [];
+  const seen = new Set();
+  
+  const referenceTags = [
+    'Network', 'Zone', 'Service', 'Group', 'Member', 'Members',
+    'Interface', 'VLAN', 'Alias', 'Schedule', 'WebFilter',
+    'ApplicationControl', 'IntrusionPrevention', 'Country',
+    'Application', 'Activity', 'Category', 'Identity',
+    'SourceNetwork', 'DestinationNetwork', 'SourceZone', 'DestinationZone',
+    'SourceService', 'DestinationService', 'FQDN', 'IPAddress',
+    'MACAddress', 'Host', 'HostGroup', 'ServiceGroup',
+    'CertificateAuthority', 'Certificate', 'After', 'Before',
+    'MoveTo', 'DecryptionProfile', 'IPFamily',
+    'User', 'DisableUser', 'AllowedUser', 'AuthenticationServer',
+    'SDWANProfileName', 'LinkSelection'
+  ];
+  
+  // Get matching parent elements from index
+  const matchingElements = textNodeIndex.get(entityName) || [];
+  
+  for (const parentElement of matchingElements) {
+    if (!parentElement) continue;
+    
+    // Skip if this is the Name element of the entity itself
+    if (parentElement.tagName === 'Name') {
+      const grandParent = parentElement.parentElement;
+      if (grandParent) {
+        const entityNameEl = grandParent.querySelector(':scope > Name');
+        if (entityNameEl && entityNameEl.textContent.trim() === entityName) {
+          continue;
+        }
+      }
+    }
+    
+    // Check if parent element is a reference tag
+    if (referenceTags.includes(parentElement.tagName)) {
+      const parentEntity = findParentEntity(parentElement);
+      if (parentEntity && parentEntity.name !== entityName) {
+        const context = findReferenceContext(parentElement);
+        
+        const refKey = `${parentEntity.tag}|${parentEntity.name}|${context.tag}|${parentElement.tagName}`;
+        if (!seen.has(refKey)) {
+          seen.add(refKey);
+          references.push({
+            parentEntityName: parentEntity.name,
+            parentEntityTag: parentEntity.tag,
+            parentTransactionId: parentEntity.transactionId,
+            contextTag: context.tag,
+            contextPath: context.path,
+            referenceElement: parentElement.tagName,
+            fullPath: buildFullPath(parentElement)
+          });
+        }
+      }
+    }
+  }
+  
+  return references;
+}
+
+/**
+ * Build a reference tree for all entities in the XML (SYNC version - legacy)
  * @param {string} xmlString - The XML content as a string
  * @returns {Object} - Map of entity names to their reference trees
+ * @deprecated Use buildEntityReferenceTreeAsync for large files
  */
 export function buildEntityReferenceTree(xmlString) {
   const parser = new DOMParser();
@@ -35,24 +227,24 @@ export function buildEntityReferenceTree(xmlString) {
     }
   });
 
-  // Step 3: For each entity name, find all references
+  // Step 3: Build text node index once
+  const textNodeIndex = buildTextNodeIndex(xmlDoc);
+
+  // Step 4: For each entity name, find all references using optimized lookup
   const referenceTree = {};
   
   entityMap.forEach((entityDefs, entityName) => {
-    const references = findEntityReferences(xmlDoc, entityName, entityMap);
-    // Get the primary tag (most common tag for this entity name)
+    const references = findEntityReferencesOptimized(entityName, textNodeIndex, entityMap);
     const primaryTag = entityDefs.length > 0 ? entityDefs[0].tag : 'Unknown';
     
-    // Only include entities that have one or more references
     if (references.length > 0) {
       referenceTree[entityName] = {
         entityName,
-        primaryTag, // Store the primary XML tag name
+        primaryTag,
         definitions: entityDefs,
         references: references
       };
     }
-    // Entities without references are not included in the tree
   });
   
   return referenceTree;

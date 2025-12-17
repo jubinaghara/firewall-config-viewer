@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { ChevronRight, ChevronDown, Network, Search, X, ArrowLeft, Loader2, Download } from 'lucide-react'
-import { buildEntityReferenceTree, convertToVisualizationTree } from '../utils/entityReferenceTree'
+import { buildEntityReferenceTreeAsync, convertToVisualizationTree } from '../utils/entityReferenceTree'
 import { generateConfigTreeHTML } from '../utils/configTreeHtmlGenerator'
 import { combineStyles } from '../utils/themeUtils'
 import theme from '../theme'
@@ -17,37 +17,57 @@ function ConfigurationTree({ xmlContent, onClose, onLoadingChange }) {
   const [expandedNodes, setExpandedNodes] = useState(new Set())
   const [isBuildingTree, setIsBuildingTree] = useState(true)
   const [referenceTree, setReferenceTree] = useState({})
+  const [buildProgress, setBuildProgress] = useState(0)
+  const cancelledRef = useRef(false)
 
-  // Build reference tree from XML content asynchronously to show loading state
+  // Build reference tree from XML content asynchronously with progress
   useEffect(() => {
     if (!xmlContent || typeof xmlContent !== 'string') {
       setReferenceTree({})
       setIsBuildingTree(false)
+      setBuildProgress(0)
       if (onLoadingChange) onLoadingChange(false)
       return
     }
 
+    cancelledRef.current = false
     setIsBuildingTree(true)
+    setBuildProgress(0)
     if (onLoadingChange) onLoadingChange(true)
 
-    // Use setTimeout to allow UI to render loading state first
-    const buildTree = () => {
+    // Use async function with progress callback
+    const buildTree = async () => {
       try {
-        const tree = buildEntityReferenceTree(xmlContent)
-        setReferenceTree(tree)
+        const tree = await buildEntityReferenceTreeAsync(xmlContent, (progress) => {
+          if (!cancelledRef.current) {
+            setBuildProgress(progress)
+          }
+        })
+        
+        if (!cancelledRef.current) {
+          setReferenceTree(tree)
+        }
       } catch (error) {
         console.error('Error building reference tree:', error)
-        setReferenceTree({})
+        if (!cancelledRef.current) {
+          setReferenceTree({})
+        }
       } finally {
-        setIsBuildingTree(false)
-        if (onLoadingChange) onLoadingChange(false)
+        if (!cancelledRef.current) {
+          setIsBuildingTree(false)
+          setBuildProgress(100)
+          if (onLoadingChange) onLoadingChange(false)
+        }
       }
     }
 
     // Small delay to ensure loading state is visible
     const timeoutId = setTimeout(buildTree, 50)
     
-    return () => clearTimeout(timeoutId)
+    return () => {
+      cancelledRef.current = true
+      clearTimeout(timeoutId)
+    }
   }, [xmlContent, onLoadingChange])
 
   // Filter entities based on search term (search by both entity name and tag name)
@@ -371,13 +391,32 @@ function ConfigurationTree({ xmlContent, onClose, onLoadingChange }) {
         </div>
       ) : isBuildingTree ? (
         <div className="flex-1 flex items-center justify-center p-8">
-          <div className="text-center">
+          <div className="text-center w-full max-w-md">
             <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin" style={{ color: theme.colors.primary.main }} />
             <p className="text-lg font-medium mb-2" style={{ color: theme.colors.text.heading }}>
               Building usage references
             </p>
-            <p className="text-sm" style={{ color: theme.colors.text.secondary }}>
-              Analyzing entity references...
+            <p className="text-sm mb-4" style={{ color: theme.colors.text.secondary }}>
+              {buildProgress < 15 ? 'Parsing XML structure...' :
+               buildProgress < 35 ? 'Indexing text nodes...' :
+               buildProgress < 95 ? 'Analyzing entity references...' :
+               'Finalizing...'}
+            </p>
+            {/* Progress bar */}
+            <div 
+              className="w-full h-2 rounded-full overflow-hidden"
+              style={{ backgroundColor: theme.colors.border.light }}
+            >
+              <div 
+                className="h-full rounded-full transition-all duration-300 ease-out"
+                style={{ 
+                  width: `${buildProgress}%`,
+                  backgroundColor: theme.colors.primary.main
+                }}
+              />
+            </div>
+            <p className="text-xs mt-2" style={{ color: theme.colors.text.muted }}>
+              {buildProgress}% complete
             </p>
           </div>
         </div>
