@@ -1,5 +1,7 @@
 /* Import local fonts */
 @import './fonts.css';
+/* Import table theme */
+@import './table-theme.css';
 
 @tailwind base;
 @tailwind components;

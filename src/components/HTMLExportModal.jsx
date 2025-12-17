@@ -189,10 +189,16 @@ export default function HTMLExportModal({ data, sectionVisibility, onToggleSecti
       sections.push({ key: 'firewallRules', name: 'Firewall Rules', icon: 'shield', count: filteredRules.length })
     }
     
+    // === SECTION 4.5: SSL/TLS INSPECTION RULES ===
+    if (data.sslTlsInspectionRules && data.sslTlsInspectionRules.length > 0) {
+      sections.push({ key: 'sslTlsInspectionRules', name: 'SSL/TLS Inspection Rules', icon: 'lock', count: data.sslTlsInspectionRules.length })
+    }
+    
     // === SECTION 5: GROUPS (Fourth - groups after individual objects) ===
     if (entityCounts.fqdnHostGroups > 0) sections.push({ key: 'fqdnHostGroups', name: 'FQDN Host Groups', icon: 'group_work', count: entityCounts.fqdnHostGroups })
     if (entityCounts.ipHostGroups > 0) sections.push({ key: 'ipHostGroups', name: 'IP Host Groups', icon: 'group_work', count: entityCounts.ipHostGroups })
     if (entityCounts.serviceGroups > 0) sections.push({ key: 'serviceGroups', name: 'Service Groups', icon: 'group_work', count: entityCounts.serviceGroups })
+    if (data.entitiesByTag?.CountryGroup?.length > 0) sections.push({ key: 'countryGroups', name: 'Country Groups', icon: 'group_work', count: data.entitiesByTag.CountryGroup.length })
     if (entityCounts.groups > 0) sections.push({ key: 'groups', name: 'Other Groups', icon: 'groups', count: entityCounts.groups })
     
     // === SECTION 6: SERVICES (Fifth - services after groups) ===
@@ -212,6 +218,7 @@ export default function HTMLExportModal({ data, sectionVisibility, onToggleSecti
     // === SECTION 8: CERTIFICATES (Combined - show as one entry but handle individually) ===
     const certificateCount = (dynamicEntities.CertificateAuthority || 0) + 
                            (dynamicEntities.SelfSignedCertificate || 0) + 
+                           (dynamicEntities.SelfSignedCertificateAuthority || 0) +
                            (dynamicEntities.Certificate || 0)
     if (certificateCount > 0) {
       sections.push({ 
@@ -234,9 +241,9 @@ export default function HTMLExportModal({ data, sectionVisibility, onToggleSecti
       Object.entries(data.entitiesByTag).forEach(([tag, items]) => {
         if (items && items.length > 0 && ![
           'IPHost','FQDNHost','MACHost','Service','Services','Group','FQDNHostGroup','IPHostGroup','ServiceGroup',
-          'Country','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork',
+          'Country','CountryGroup','WebFilterPolicy','Schedule','VLAN','Alias','Interface','LAG','WirelessNetwork',
           'CertificateAuthority','SelfSignedCertificate','Certificate','Zone','Network','REDDevice','WirelessAccessPoint',
-          'IPSPolicy','IntrusionPrevention','VirusScanning','WebFilter'
+          'IPSPolicy','IntrusionPrevention','VirusScanning','WebFilter','After','GroupDetail'
         ].includes(tag)) {
           sections.push({ key: tag, name: tag, icon: getEntityIcon(tag), count: items.length })
         }
@@ -304,6 +311,9 @@ export default function HTMLExportModal({ data, sectionVisibility, onToggleSecti
         allDeselected[section.key] = false
       }
     })
+    // CRITICAL: Always set SSL/TLS Inspection Rules and Country Groups to false explicitly
+    allDeselected.sslTlsInspectionRules = false
+    allDeselected.countryGroups = false
     // Also deselect all dynamic entities
     if (data.entitiesByTag) {
       Object.keys(data.entitiesByTag).forEach(tag => {
@@ -349,7 +359,7 @@ export default function HTMLExportModal({ data, sectionVisibility, onToggleSecti
         })
       }
 
-      const htmlContent = generateHTMLReport(data, exportVisibility)
+      const htmlContent = await generateHTMLReport(data, exportVisibility)
       
       // Create and download
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })

@@ -70,6 +70,46 @@ function App() {
       portsWithVlans: true,
     }
     
+    // Add grouped section keys that are used in ReportView sidebar
+    if (data.ipHosts?.length || data.fqdnHosts?.length || data.macHosts?.length) {
+      sections.referencedObjects = true
+    }
+    
+    if (data.fqdnHostGroups?.length || data.ipHostGroups?.length || data.serviceGroups?.length || data.groups?.length || data.entitiesByTag?.CountryGroup?.length) {
+      sections['groups-section'] = true
+      if (data.entitiesByTag?.CountryGroup?.length) {
+        sections.countryGroups = true
+      }
+    }
+    
+    if (data.sslTlsInspectionRules?.length) {
+      sections.sslTlsInspectionRules = true
+    }
+    
+    if (data.entitiesByTag?.NATRule?.length) {
+      sections.NATRule = true
+    }
+    
+    // Security policies grouped section
+    if (data.entitiesByTag?.WebFilterPolicy || data.entitiesByTag?.Schedule || 
+        data.entitiesByTag?.Country || data.entitiesByTag?.IPSPolicy ||
+        data.entitiesByTag?.IntrusionPrevention || data.entitiesByTag?.VirusScanning ||
+        data.entitiesByTag?.WebFilter) {
+      sections['security-policies'] = true
+    }
+    
+    // Certificates grouped section
+    if (data.entitiesByTag?.CertificateAuthority || data.entitiesByTag?.SelfSignedCertificate ||
+        data.entitiesByTag?.Certificate) {
+      sections.certificates = true
+    }
+    
+    // Network config grouped section
+    if (data.entitiesByTag?.Zone || data.entitiesByTag?.Network || 
+        data.entitiesByTag?.REDDevice || data.entitiesByTag?.WirelessAccessPoint) {
+      sections['network-config'] = true
+    }
+    
     // Add dynamic entities
     if (data.entitiesByTag) {
       Object.keys(data.entitiesByTag).forEach(tag => {
@@ -81,6 +121,7 @@ function App() {
   }
   
   const [sectionVisibility, setSectionVisibility] = useState({})
+  const [isSelectionLoading, setIsSelectionLoading] = useState(false)
   
   // Update section visibility when data changes
   useEffect(() => {
@@ -98,6 +139,80 @@ function App() {
       })
     }
   }, [parsedData])
+  
+  // Helper function to get ALL possible section keys from data
+  const getAllSectionKeys = (data) => {
+    if (!data) return []
+    const keys = new Set()
+    
+    // Default sections
+    const defaultSections = getDefaultSectionVisibility(data)
+    Object.keys(defaultSections).forEach(key => keys.add(key))
+    
+    // Grouped sections (from ReportView logic)
+    if (data.ipHosts?.length || data.fqdnHosts?.length || data.macHosts?.length) {
+      keys.add('referencedObjects')
+      keys.add('ipHosts')
+      keys.add('fqdnHosts')
+      keys.add('macHosts')
+    }
+    
+    if (data.fqdnHostGroups?.length || data.ipHostGroups?.length || data.serviceGroups?.length || data.groups?.length || data.entitiesByTag?.CountryGroup?.length) {
+      keys.add('groups-section')
+      keys.add('fqdnHostGroups')
+      keys.add('ipHostGroups')
+      keys.add('serviceGroups')
+      keys.add('groups')
+      if (data.entitiesByTag?.CountryGroup?.length) {
+        keys.add('countryGroups')
+      }
+    }
+    
+    if (data.services?.length) {
+      keys.add('services')
+    }
+    
+    if (data.sslTlsInspectionRules?.length) {
+      keys.add('sslTlsInspectionRules')
+    }
+    
+    if (data.entitiesByTag?.NATRule?.length) {
+      keys.add('NATRule')
+    }
+    
+    // Security policies grouped section
+    if (data.entitiesByTag?.WebFilterPolicy || data.entitiesByTag?.Schedule || 
+        data.entitiesByTag?.Country || data.entitiesByTag?.IPSPolicy ||
+        data.entitiesByTag?.IntrusionPrevention || data.entitiesByTag?.VirusScanning ||
+        data.entitiesByTag?.WebFilter) {
+      keys.add('security-policies')
+    }
+    
+    // Certificates grouped section
+    if (data.entitiesByTag?.CertificateAuthority || data.entitiesByTag?.SelfSignedCertificate ||
+        data.entitiesByTag?.Certificate) {
+      keys.add('certificates')
+    }
+    
+    // Network config grouped section
+    if (data.entitiesByTag?.Zone || data.entitiesByTag?.Network || 
+        data.entitiesByTag?.REDDevice || data.entitiesByTag?.WirelessAccessPoint) {
+      keys.add('network-config')
+    }
+    
+    // Interfaces & Network
+    if (data.entitiesByTag?.Interface || data.portsWithEntities || 
+        data.lagsWithMembers || data.entitiesByTag?.WirelessNetwork) {
+      keys.add('portsWithVlans')
+    }
+    
+    // All dynamic entity tags
+    if (data.entitiesByTag) {
+      Object.keys(data.entitiesByTag).forEach(tag => keys.add(tag))
+    }
+    
+    return Array.from(keys)
+  }
 
   const handleFileUpload = async (xmlContentString) => {
     setLoading(true)
@@ -160,51 +275,69 @@ function App() {
   // Select all sections
   const selectAllSections = () => {
     if (!parsedData) return
-    const allSections = getDefaultSectionVisibility(parsedData)
-    const allSelected = {}
-    Object.keys(allSections).forEach(key => {
-      allSelected[key] = true
-    })
-    // Explicitly select all certificate types (certificates is a grouped section)
-    if (parsedData.entitiesByTag?.CertificateAuthority) {
-      allSelected.CertificateAuthority = true
-    }
-    if (parsedData.entitiesByTag?.SelfSignedCertificate) {
-      allSelected.SelfSignedCertificate = true
-    }
-    if (parsedData.entitiesByTag?.Certificate) {
-      allSelected.Certificate = true
-    }
-    // Also ensure all dynamic entities are selected
-    if (parsedData.entitiesByTag) {
-      Object.keys(parsedData.entitiesByTag).forEach(tag => {
-        if (parsedData.entitiesByTag[tag]?.length > 0) {
-          allSelected[tag] = true
-        }
+    setIsSelectionLoading(true)
+    
+    // Use setTimeout to allow UI to update and show loading
+    setTimeout(() => {
+      const allSectionKeys = getAllSectionKeys(parsedData)
+      const allSelected = {}
+      
+      // Set all sections to true
+      allSectionKeys.forEach(key => {
+        allSelected[key] = true
       })
-    }
-    setSectionVisibility(allSelected)
+      
+      setSectionVisibility(allSelected)
+      
+      // Hide loading after a short delay
+      setTimeout(() => {
+        setIsSelectionLoading(false)
+      }, 100)
+    }, 50)
   }
   
   // Deselect all sections
   const deselectAllSections = () => {
     if (!parsedData) return
-    const allSections = getDefaultSectionVisibility(parsedData)
-    const allDeselected = {}
-    Object.keys(allSections).forEach(key => {
-      allDeselected[key] = false
-    })
-    // Explicitly deselect all certificate types (certificates is a grouped section)
-    allDeselected.CertificateAuthority = false
-    allDeselected.SelfSignedCertificate = false
-    allDeselected.Certificate = false
-    // Also ensure all dynamic entities are deselected
-    if (parsedData.entitiesByTag) {
-      Object.keys(parsedData.entitiesByTag).forEach(tag => {
-        allDeselected[tag] = false
+    setIsSelectionLoading(true)
+    
+    // Use setTimeout to allow UI to update and show loading
+    setTimeout(() => {
+      setSectionVisibility(prev => {
+        const allSectionKeys = getAllSectionKeys(parsedData)
+        const allDeselected = {}
+        
+        // Set ALL sections to false explicitly
+        allSectionKeys.forEach(key => {
+          allDeselected[key] = false
+        })
+        
+        // CRITICAL: Always set certificate types to false explicitly (certificates checkbox visibility depends on these)
+        // These must be false for the certificates checkbox to show as unchecked
+        allDeselected.CertificateAuthority = false
+        allDeselected.SelfSignedCertificate = false
+        allDeselected.Certificate = false
+        allDeselected.certificates = false // Also set the group key
+        
+        // CRITICAL: Always set SSL/TLS Inspection Rules and Country Groups to false explicitly
+        allDeselected.sslTlsInspectionRules = false
+        allDeselected.countryGroups = false
+        
+        // Also ensure any keys that might exist in current visibility are set to false
+        Object.keys(prev).forEach(key => {
+          if (!allDeselected.hasOwnProperty(key)) {
+            allDeselected[key] = false
+          }
+        })
+        
+        return allDeselected
       })
-    }
-    setSectionVisibility(allDeselected)
+      
+      // Hide loading after a short delay
+      setTimeout(() => {
+        setIsSelectionLoading(false)
+      }, 100)
+    }, 50)
   }
 
   return (
@@ -225,12 +358,10 @@ function App() {
                 <Lock className="w-5 h-5 flex-shrink-0 mt-0.5" style={{ color: theme.colors.privacy.icon }} />
                 <div className="flex-1">
                   <p className="text-sm font-medium" style={{ color: theme.colors.privacy.text.primary }}>
-                    100% Local Processing - Your Data Stays Private
+                    100% local processing. Your data stays private.
                   </p>
-                  <p className="text-xs mt-1" style={{ color: theme.colors.privacy.text.secondary }}>
-                    All file parsing, analysis, and report generation happens entirely in your browser. 
-                    Your configuration files are never uploaded to any server, even if this application is hosted in the cloud. 
-                    Your data remains completely private and secure on your device.
+                  <p className="text-xs mt-1" style={{ color: theme.colors.privacy.text.primary }}>
+                  All file parsing, analysis, and report generation happen on your endpoint.
                   </p>
                 </div>
               </div>
@@ -360,7 +491,7 @@ function App() {
               <p className="text-xl mb-2 max-w-3xl mx-auto" style={combineStyles(
                 { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
               )}>
-                Convert XML to readable reports and compare configuration changes
+                View and compare your firewall configurations with this powerful, privacy-first app. The report is clear, human-readable, and easy to export.
               </p>
             </div>
             
@@ -390,14 +521,16 @@ function App() {
                     <h3 className="text-2xl font-bold mb-3" style={combineStyles(
                       { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                     )}>
-                      Configuration Report
+                      Configuration report
                     </h3>
                     <p className="mb-6 leading-relaxed" style={combineStyles(
                       { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
                     )}>
-                      Upload a single XML configuration file to generate a comprehensive, detailed report. 
-                      Analyze firewall rules, hosts, services, and network entities with an intuitive, 
-                      exportable report format.
+                      Upload a single Entities.xml configuration file. Generate a comprehensive list of the configurations it contains, such as firewall rules, hosts and services, and network modules.
+                      <span><br />
+                        </span>
+                        <span><br />
+                        </span>
                     </p>
                     <div className="flex items-center text-sm font-semibold" style={{
                       color: theme.components.landingCard.linkColor,
@@ -436,14 +569,16 @@ function App() {
                     <h3 className="text-2xl font-bold mb-3" style={combineStyles(
                       { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                     )}>
-                      Compare Configurations
+                      Compare configurations
                     </h3>
                     <p className="mb-6 leading-relaxed" style={combineStyles(
                       { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
                     )}>
-                      Upload two XML configuration files to perform a side-by-side comparison. 
-                      Identify changes, additions, and deletions with a GitHub-style diff view 
-                      that highlights exactly what changed between versions.
+                       Upload the Entities.xml files of two configurations.
+
+                      Generate a comparative report of the configurations they contain, such as firewall rules, hosts and services, and network modules. 
+                      The generated format highlights the differences. 
+
                     </p>
                     <div className="flex items-center text-sm font-semibold" style={{
                       color: theme.components.landingCard.linkColor,
@@ -481,7 +616,7 @@ function App() {
                   <p className="text-sm" style={combineStyles(
                     { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
                   )}>
-                    All processing happens locally in your client. Your configuration files never leave your device.
+                    All processing happens locally in your endpoint. 
                   </p>
                 </div>
                 <div className="text-center">
@@ -491,12 +626,12 @@ function App() {
                   <h3 className="text-lg font-semibold mb-2" style={combineStyles(
                     { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                   )}>
-                    Enterprise Ready
+                    Enterprise-ready
                   </h3>
                   <p className="text-sm" style={combineStyles(
                     { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
                   )}>
-                    Built for Sophos Firewall administrators who need powerful, reliable configuration analysis tools.
+                    Built for Sophos Firewall administrators who need powerful and reliable configuration analysis.
                   </p>
                 </div>
                 <div className="text-center">
@@ -506,12 +641,12 @@ function App() {
                   <h3 className="text-lg font-semibold mb-2" style={combineStyles(
                     { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                   )}>
-                    Export & Share
+                    Export and share
                   </h3>
                   <p className="text-sm" style={combineStyles(
                     { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
                   )}>
-                    Export reports and comparisons as HTML files for easy sharing and documentation.
+                    Export the reports as HTML files. You can easily save or share them.
                   </p>
                 </div>
               </div>
@@ -533,29 +668,32 @@ function App() {
               <h2 className="text-2xl font-bold text-gray-900">Configuration Report</h2>
               <div className="flex items-center gap-3">
                 <button
+                  type="button"
                   onClick={() => {
                     setConfigTreeLoading(true)
                     setShowConfigTree(true)
-                    // Loading will be handled by ConfigurationTree component
                   }}
                   disabled={configTreeLoading}
                   className="px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   style={combineStyles(
-                    { 
-                      color: 'components.button.secondary.text',
-                      backgroundColor: 'components.button.secondary.bg',
-                      fontFamily: 'typography.fontFamily.primary',
-                      border: `1px solid ${theme.colors.border.medium}`
+                    {
+                      color: theme.components.button.secondary.text,
+                      backgroundColor: theme.components.button.secondary.bg,
+                      fontFamily: theme.typography.fontFamily.primary,
+                      border: `1px solid ${theme.colors.border.medium}`,
+                      boxShadow: theme.shadows.sm,
                     }
                   )}
                   onMouseEnter={(e) => {
                     if (!configTreeLoading) {
                       e.target.style.backgroundColor = theme.components.button.secondary.hover
+                      e.target.style.color = theme.components.button.secondary.text
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!configTreeLoading) {
                       e.target.style.backgroundColor = theme.components.button.secondary.bg
+                      e.target.style.color = theme.components.button.secondary.text
                     }
                   }}
                 >
@@ -567,10 +705,11 @@ function App() {
                   ) : (
                     <>
                       <Network className="w-4 h-4" />
-                      Usage Reference
+                      Usage reference
                     </>
                   )}
                 </button>
+                {/*
                 <button
                   onClick={() => {
                     setConfigAnalyzerLoading(true)
@@ -610,6 +749,7 @@ function App() {
                     </>
                   )}
                 </button>
+                */}
                 <ExportButton 
                   viewMode="report" 
                   data={parsedData}
@@ -625,6 +765,7 @@ function App() {
               onToggleSection={toggleSection}
               onSelectAll={selectAllSections}
               onDeselectAll={deselectAllSections}
+              isSelectionLoading={isSelectionLoading}
             />
           </div>
         )}

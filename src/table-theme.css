@@ -1,0 +1,527 @@
+/* ===== SOPHOS CONSOLE STYLE TABLE THEME ===== */
+/* Using primary brand colors from theme.js */
+
+.sophos-table-container {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 80vh;
+  border: 1px solid #d5dbdb;
+  border-radius: 6px;
+  background: #fff;
+  font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+  position: relative;
+}
+
+/* Table base */
+.sophos-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  min-width: 900px;         /* Sophos tables rarely go below ~900px */
+  font-size: 14px;
+  border: 1px solid #e5e7eb;
+}
+
+/* Responsive table - allows smaller min-width when needed */
+.sophos-table-wrapper .sophos-table[style*="min-width: auto"],
+.sophos-table-wrapper .sophos-table[style*="table-layout: auto"] {
+  min-width: auto;
+  max-width: 100%;
+}
+
+/* Header */
+.sophos-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.sophos-table thead th {
+  background-color: #f2f3f3;
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: #16191f;
+  border-bottom: 2px solid #e5e7eb;
+  white-space: nowrap;      /* Sophos headers DO NOT wrap */
+  position: sticky;          /* Sticky header, also establishes positioning context for resize handles */
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Resize handle for columns */
+
+.sophos-table thead th .sophos-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 11;
+  background: transparent;
+  transition: all 0.2s ease;
+  /* Add visible divider indicator - always visible subtle line */
+  border-right: 2px solid #d1d5db;
+  margin-right: -1px;
+}
+
+/* Make divider more visible on hover */
+.sophos-table thead th .sophos-resize-handle:hover {
+  background-color: rgba(0, 73, 189, 0.1);
+  border-right-color: #0049BD;
+  border-right-width: 3px;
+  width: 8px;
+}
+
+.sophos-table thead th .sophos-resize-handle:active {
+  background-color: rgba(0, 74, 159, 0.15);
+  border-right-color: #004A9F;
+  border-right-width: 3px;
+  width: 8px;
+}
+
+/* Rows */
+.sophos-table tbody tr {
+  border-bottom: 1px solid #e5e7eb !important;
+  border-top: none;
+}
+
+.sophos-table tbody tr:first-child {
+  border-top: none;
+}
+
+.sophos-table tbody tr:last-child {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.sophos-table tbody tr:hover {
+  background: #f7f9f9;      /* Sophos subtle row hover */
+}
+
+/* Cells */
+.sophos-table tbody td {
+  padding: 10px 12px;
+  color: #16191f;
+  vertical-align: middle;
+  line-height: 1.4;
+  word-break: break-word;    /* Allows wrapping naturally */
+  white-space: normal;       /* Sophos tables allow content wrapping */
+  border-bottom: 1px solid #e5e7eb !important;
+  border-left: none;
+  border-top: none;
+}
+
+/* Column borders for grid-like appearance - all cells except last column */
+.sophos-table tbody td:not(:last-child) {
+  border-right: 1px solid #e5e7eb !important;
+}
+
+.sophos-table thead th:not(:last-child) {
+  border-right: 1px solid #e5e7eb !important;
+}
+
+.sophos-table tbody tr:last-child td {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+/* Text truncation utility (Sophos uses this often) */
+.sophos-truncate {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Checkbox column (Sophos style narrow column) */
+.sophos-col-checkbox {
+  width: 40px;
+  text-align: center;
+}
+
+/* Sort icons like Sophos (optional) */
+.sophos-sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sophos-sortable::after {
+  content: "⇅";
+  font-size: 10px;
+  margin-left: 4px;
+  opacity: 0.4;
+}
+
+/* Table with fixed layout */
+.sophos-table-fixed {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 100%;
+}
+
+/* Column width utilities */
+.sophos-col-250 {
+  width: 250px;
+}
+
+.sophos-col-auto {
+  width: auto;
+}
+
+/* Table cell with specific styling */
+.sophos-table-cell {
+  padding: 10px 12px;
+  color: #16191f;
+  vertical-align: middle;
+  line-height: 1.4;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  border-bottom: 1px solid #d1d5db !important;
+}
+
+/* Table cell for labels (left column in field tables) */
+.sophos-table-cell-label {
+  padding: 0.375rem 0.75rem 0.375rem 0;
+  color: #6b7280;
+  font-weight: 500;
+  width: 250px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: top;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+/* Table cell for values (right column in field tables) */
+.sophos-table-cell-value {
+  padding: 0.375rem 0 0.375rem 0.5rem;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  vertical-align: top;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: #111827;
+}
+
+/* Table header cell */
+.sophos-table-header {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #16191f;
+  background-color: #f2f3f3;
+  border-bottom: 1px solid #d5dbdb;
+  white-space: nowrap;
+}
+
+/* Table header cell with min-width */
+.sophos-table-header-min {
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #16191f;
+  background-color: #f2f3f3;
+  border-bottom: 1px solid #d5dbdb;
+  white-space: nowrap;
+}
+
+/* Table row */
+.sophos-table-row {
+  border-bottom: 1px solid #e5e7eb !important;
+  border-top: none;
+}
+
+.sophos-table-row:first-child {
+  border-top: none;
+}
+
+.sophos-table-row:hover {
+  background: #f7f9f9;
+}
+
+.sophos-table-row td {
+  border-bottom: 1px solid #e5e7eb !important;
+  border-left: none;
+  border-top: none;
+}
+
+.sophos-table-row td:not(:last-child) {
+  border-right: 1px solid #e5e7eb !important;
+}
+
+.sophos-table-row:last-child td {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+/* Small table (for nested tables) */
+.sophos-table-small {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+}
+
+.sophos-table-small thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.sophos-table-small thead th {
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0.375rem 0.5rem;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  font-size: 0.75rem;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.sophos-table-small tbody tr {
+  border-bottom: 1px solid #d1d5db;
+}
+
+.sophos-table-small tbody tr:first-child {
+  border-top: none;
+}
+
+.sophos-table-small tbody td {
+  padding: 0.25rem 0.5rem;
+  color: #1f2937;
+  border-bottom: 1px solid #d1d5db !important;
+}
+
+/* Field table (two-column layout for key-value pairs) */
+.sophos-field-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
+  min-width: 100%;
+}
+
+.sophos-field-table tbody tr {
+  border-bottom: 1px solid #e5e7eb !important;
+  border-top: none;
+}
+
+.sophos-field-table tbody tr:first-child {
+  border-top: none;
+}
+
+.sophos-field-table tbody tr:last-child {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+.sophos-field-table tbody td {
+  border-bottom: 1px solid #e5e7eb !important;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.sophos-field-table tbody tr:last-child td {
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+/* Responsive table wrapper */
+.sophos-table-wrapper {
+  overflow-x: auto !important;
+  overflow-y: auto;
+  max-height: 80vh;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  position: relative;
+  max-width: 100%;
+  box-sizing: border-box;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+/* Table with min-width for wide tables */
+.sophos-table-wide {
+  min-width: 1800px;
+}
+
+/* Ensure tables with many columns trigger horizontal scroll */
+.sophos-table-wrapper table.sophos-table[style*="min-width"] {
+  min-width: inherit;
+}
+
+/* Table cell with word break */
+.sophos-cell-break {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+
+/* Table cell with max-width */
+.sophos-cell-max-200 {
+  max-width: 200px;
+}
+
+.sophos-cell-max-250 {
+  max-width: 250px;
+}
+
+.sophos-cell-max-300 {
+  max-width: 300px;
+}
+
+.sophos-cell-max-400 {
+  max-width: 400px;
+}
+
+.sophos-cell-max-500 {
+  max-width: 500px;
+}
+
+/* Table cell with min-width */
+.sophos-cell-min-80 {
+  min-width: 80px;
+}
+
+.sophos-cell-min-100 {
+  min-width: 100px;
+}
+
+.sophos-cell-min-120 {
+  min-width: 120px;
+}
+
+.sophos-cell-min-150 {
+  min-width: 150px;
+}
+
+.sophos-cell-min-200 {
+  min-width: 200px;
+}
+
+/* Table cell alignment */
+.sophos-cell-align-top {
+  vertical-align: top;
+}
+
+.sophos-cell-align-middle {
+  vertical-align: middle;
+}
+
+/* Table cell padding variations */
+.sophos-cell-padding-sm {
+  padding: 0.25rem 0.5rem;
+}
+
+.sophos-cell-padding-md {
+  padding: 0.625rem 1rem;
+}
+
+.sophos-cell-padding-lg {
+  padding: 10px 12px;
+}
+
+/* Table cell text sizes */
+.sophos-cell-text-xs {
+  font-size: 0.75rem;
+}
+
+.sophos-cell-text-sm {
+  font-size: 0.875rem;
+}
+
+.sophos-cell-text-base {
+  font-size: 1rem;
+}
+
+/* Table cell font weights */
+.sophos-cell-font-medium {
+  font-weight: 500;
+}
+
+.sophos-cell-font-semibold {
+  font-weight: 600;
+}
+
+/* Table cell text colors */
+.sophos-cell-text-gray-600 {
+  color: #6b7280;
+}
+
+.sophos-cell-text-gray-700 {
+  color: #374151;
+}
+
+.sophos-cell-text-gray-800 {
+  color: #1f2937;
+}
+
+.sophos-cell-text-gray-900 {
+  color: #111827;
+}
+
+/* Table header text colors */
+.sophos-header-text-gray-700 {
+  color: #374151;
+}
+
+/* Table background colors */
+.sophos-bg-gray-50 {
+  background-color: #f9fafb;
+}
+
+.sophos-bg-gray-100 {
+  background-color: #f3f4f6;
+}
+
+.sophos-bg-white {
+  background-color: #ffffff;
+}
+
+/* Table border colors */
+.sophos-border-gray-200 {
+  border-color: #e5e7eb;
+}
+
+.sophos-border-gray-300 {
+  border-color: #d1d5db;
+}
+
+/* Table row hover */
+.sophos-row-hover:hover {
+  background: #f7f9f9;
+}
+
+/* Table divider */
+.sophos-divide-y {
+  border-top: 1px solid #eaeded;
+}
+
+.sophos-divide-y-gray-200 {
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Print styles for tables */
+@media print {
+  .sophos-table-container {
+    border: 1px solid #d1d5db;
+    page-break-inside: avoid;
+  }
+  
+  .sophos-table {
+    min-width: auto;
+  }
+  
+  .sophos-table tbody tr {
+    page-break-inside: avoid;
+  }
+}
+

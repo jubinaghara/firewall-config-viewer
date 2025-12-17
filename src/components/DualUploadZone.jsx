@@ -124,10 +124,10 @@ export default function DualUploadZone({ onFilesUpload, loading, error, onHomeCl
       <div className="w-full max-w-4xl">
         <div className="mb-6 text-center">
           <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-            Compare Two XML Configurations
+            Compare two XML Configurations
           </h2>
           <p className="text-gray-600">
-            Upload your current and new configuration files to see what changed
+            Upload two Entities.xml files, for example, your previous and current configuration files, to see what has changed.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export default function DualUploadZone({ onFilesUpload, loading, error, onHomeCl
 
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  Current / Old File
+                  Previous file
                 </h3>
                 {oldFile ? (
                   <div className="flex items-center justify-center gap-2">
@@ -247,7 +247,7 @@ export default function DualUploadZone({ onFilesUpload, loading, error, onHomeCl
 
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                  New File
+                  Current file
                 </h3>
                 {newFile ? (
                   <div className="flex items-center justify-center gap-2">

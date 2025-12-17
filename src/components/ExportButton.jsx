@@ -3,12 +3,12 @@ import { generateHTMLReport } from '../utils/htmlGenerator'
 import theme from '../theme'
 
 export default function ExportButton({ viewMode = 'table', data, sectionVisibility, onToggleSection }) {
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!data) return
     
     try {
       // Generate HTML with all sections visible by default (sectionVisibility will control display in the exported HTML)
-      const htmlContent = generateHTMLReport(data, sectionVisibility || {})
+      const htmlContent = await generateHTMLReport(data, sectionVisibility || {})
       
       // Create and download
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' })

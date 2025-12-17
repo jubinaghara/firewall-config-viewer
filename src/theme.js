@@ -139,11 +139,11 @@ export const theme = {
     
     // Privacy Notice Colors
     privacy: {
-      bg: '#f0fdf4',      // green-50
-      border: '#86efac',  // green-200
-      icon: '#16a34a',    // green-600
+      bg: '#FFE0B2',      // green-50
+      border: '#EC6500',  // green-200
+      icon: '#EC6500',    // green-600
       text: {
-        primary: '#14532d', // green-900
+        primary: '#000000', // green-900
         secondary: '#15803d', // green-700
       },
     },

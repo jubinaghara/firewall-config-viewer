@@ -84,16 +84,17 @@ export default function UploadZone({ onFileUpload, loading, error, onHomeClick }
 
           <div className="text-center">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Upload Firewall Configuration
+              Upload firewall configuration
             </h2>
             <p className="text-gray-600 mb-4">
-              Drag and drop your <strong>Entities.xml</strong> file here,
+              Drag and drop the <strong>Entities.xml</strong> file,
               <br />
-              or click to browse
+              or click to select the file.
             </p>
-            <p className="text-sm text-gray-500">
-              Select an Entities.xml file from your API-xxx folder
+            <p className="text-gray-500 m-4">
+              The file is in the API-xxx folder that’s downloaded when you export a configuration from <span class="font-bold">Backup and firmware &gt; Import-export</span>.
             </p>
+  
           </div>
 
           {loading && (
@@ -115,12 +116,7 @@ export default function UploadZone({ onFileUpload, loading, error, onHomeClick }
         </div>
       </div>
 
-      <div className="mt-8 text-center">
-        <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-          <FileText className="w-4 h-4" />
-          <span>Looking for an API-xxx folder with Entities.xml</span>
-        </div>
-      </div>
+    
 
       {onHomeClick && (
         <div className="mt-6 text-center">

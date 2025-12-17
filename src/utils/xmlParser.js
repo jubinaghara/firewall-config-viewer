@@ -57,8 +57,8 @@ export function parseEntitiesXML(xmlString) {
     'VLAN', 'Alias' // Add these to known tags to prevent double processing
   ])
   
-  // Exclude root/container tags
-  const excludedTags = new Set(['Configuration', 'Entities', 'Root', 'Entity'])
+  // Exclude root/container tags and nested elements that should not be standalone entities
+  const excludedTags = new Set(['Configuration', 'Entities', 'Root', 'Entity', 'MoveTo', 'Activity'])
 
   const entitiesByTag = {}
   // Heuristic: any element with a <Name> child or transactionid is considered an entity
@@ -91,6 +91,9 @@ export function parseEntitiesXML(xmlString) {
   Object.keys(entitiesByTag).forEach((tag) => {
     entitiesByTag[tag] = Array.from(xmlDoc.querySelectorAll(tag))
       .filter(el => {
+        // Skip MoveTo and Activity elements - they should not be displayed as standalone entities
+        if (tag === 'MoveTo' || tag === 'Activity') return false
+        
         // Skip container elements - if element has direct children with same tag, it's likely a container
         const hasSameTagChildren = Array.from(el.children).some(child => child.tagName === tag)
         if (hasSameTagChildren) return false
@@ -98,6 +101,14 @@ export function parseEntitiesXML(xmlString) {
         // Skip if parent element has the same tag (we're inside a container)
         const parent = el.parentElement
         if (parent && parent.tagName === tag) return false
+        
+        // Skip if MoveTo or Activity is nested inside SSLTLSInspectionRule or Websites
+        if ((tag === 'MoveTo' || tag === 'Activity') && parent) {
+          if (parent.tagName === 'SSLTLSInspectionRule' || parent.tagName === 'Websites') return false
+          // Also check if parent's parent is SSLTLSInspectionRule (for Activity inside Websites)
+          const grandParent = parent.parentElement
+          if (grandParent && grandParent.tagName === 'SSLTLSInspectionRule') return false
+        }
         
         // Must have either transactionid OR a Name child with actual content
         const hasTransactionId = el.hasAttribute('transactionid')
@@ -576,21 +587,43 @@ function parseSSLTLSInspectionRule(ruleElement, index) {
  */
 function baseParseEntity(el, idx, tagName) {
   let name = el.querySelector('Name')?.textContent.trim() || ''
-  // If no name found, use formatted tag name as fallback
+  // If no Name found, try ID or Label (for entities like WirelessAccessPoint)
+  if (!name) {
+    name = el.querySelector('ID')?.textContent.trim() || 
+           el.querySelector('Label')?.textContent.trim() || ''
+  }
+  // If still no name found, use formatted tag name as fallback
   if (!name) {
     name = formatTagName(tagName)
   }
   const transactionId = el.getAttribute('transactionid') || ''
 
   const fields = {}
+  const processedTags = new Set()
   Array.from(el.children).forEach(child => {
     const key = child.tagName
-    if (child.children.length === 0) {
-      // Simple text node
-      fields[key] = child.textContent.trim()
+    // If we've seen this tag before, convert to array
+    if (processedTags.has(key)) {
+      const existing = fields[key]
+      if (!Array.isArray(existing)) {
+        fields[key] = [existing]
+      }
+      if (child.children.length === 0) {
+        // Simple text node
+        fields[key].push(child.textContent.trim())
+      } else {
+        // Has children - use smart nested parsing
+        fields[key].push(parseNestedSmart(child))
+      }
     } else {
-      // Has children - use smart nested parsing
-      fields[key] = parseNestedSmart(child)
+      processedTags.add(key)
+      if (child.children.length === 0) {
+        // Simple text node
+        fields[key] = child.textContent.trim()
+      } else {
+        // Has children - use smart nested parsing
+        fields[key] = parseNestedSmart(child)
+      }
     }
   })
 
@@ -614,6 +647,9 @@ function parseEntitiesByTags(xmlDoc, tagNames, canonicalTag, requiredChildTag) {
   tagNames.forEach(selector => {
     const nodes = Array.from(xmlDoc.querySelectorAll(selector))
     nodes.forEach((el) => {
+      // Skip MoveTo and Activity elements - they should not be displayed as standalone entities
+      if (selector === 'MoveTo' || canonicalTag === 'MoveTo' || selector === 'Activity' || canonicalTag === 'Activity') return
+      
       // Skip container elements - if element has direct children with same tag, it's likely a container
       const hasSameTagChildren = Array.from(el.children).some(child => child.tagName === selector)
       if (hasSameTagChildren) return
@@ -621,6 +657,14 @@ function parseEntitiesByTags(xmlDoc, tagNames, canonicalTag, requiredChildTag) {
       // Skip if parent element has the same tag (we're inside a container)
       const parent = el.parentElement
       if (parent && parent.tagName === selector) return
+      
+      // Skip if MoveTo or Activity is nested inside SSLTLSInspectionRule or Websites
+      if ((selector === 'MoveTo' || canonicalTag === 'MoveTo' || selector === 'Activity' || canonicalTag === 'Activity') && parent) {
+        if (parent.tagName === 'SSLTLSInspectionRule' || parent.tagName === 'Websites') return
+        // Also check if parent's parent is SSLTLSInspectionRule (for Activity inside Websites)
+        const grandParent = parent.parentElement
+        if (grandParent && grandParent.tagName === 'SSLTLSInspectionRule') return
+      }
       
       // Filter out container elements by requiring a specific child if provided
       if (requiredChildTag && !el.querySelector(requiredChildTag)) return
@@ -873,6 +917,16 @@ export function flattenNATRule(rule) {
     return typeof value === 'string' ? value : '';
   };
 
+  // Helper to get After field (can be object with Name property or string)
+  const getAfterValue = () => {
+    const after = fields.After
+    if (!after) return ''
+    if (typeof after === 'object' && after.Name) {
+      return after.Name
+    }
+    return typeof after === 'string' ? after : ''
+  }
+
   const flattened = {
     id: rule.transactionId || rule.id || '',
     name: rule.name || fields.Name || '',
@@ -880,22 +934,30 @@ export function flattenNATRule(rule) {
     status: fields.Status || fields.Enable || '',
     ipFamily: fields.IPFamily || '',
     position: fields.Position || '',
-    after: fields.After || '',
+    after: getAfterValue(),
+    linkedFirewallrule: fields.LinkedFirewallrule || '',
     natType: fields.NATType || fields.Type || '',
     action: fields.Action || '',
+    natMethod: fields.NATMethod || '',
+    healthCheck: fields.HealthCheck || '',
+    overrideInterfaceNATPolicy: fields.OverrideInterfaceNATPolicy || '',
     logTraffic: fields.LogTraffic || '',
+    schedule: fields.Schedule || '',
     sourceZones: getArrayValue('SourceZones', 'Zone'),
     destinationZones: getArrayValue('DestinationZones', 'Zone'),
     sourceNetworks: getArrayValue('SourceNetworks', 'Network'),
     destinationNetworks: getArrayValue('DestinationNetworks', 'Network'),
     services: getArrayValue('Services', 'Service'),
+    originalSourceNetworks: getArrayValue('OriginalSourceNetworks', 'Network'),
+    originalDestinationNetworks: getArrayValue('OriginalDestinationNetworks', 'Network'),
+    originalServices: getArrayValue('OriginalServices', 'Service'),
+    inboundInterfaces: getArrayValue('InboundInterfaces', 'Interface'),
     originalSource: fields.OriginalSource || getArrayValue('OriginalSource', 'Network'),
     translatedSource: fields.TranslatedSource || getArrayValue('TranslatedSource', 'Network'),
     originalDestination: fields.OriginalDestination || getArrayValue('OriginalDestination', 'Network'),
     translatedDestination: fields.TranslatedDestination || getArrayValue('TranslatedDestination', 'Network'),
     originalService: fields.OriginalService || '',
     translatedService: fields.TranslatedService || '',
-    schedule: fields.Schedule || '',
   };
 
   return flattened;
