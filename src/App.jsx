@@ -496,50 +496,63 @@ function App() {
             </div>
             
             {/* Feature Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12" style={{ alignItems: 'stretch' }}>
               {/* Generate Report Option */}
               <div
                 onClick={() => setMode('report')}
-                className="group relative bg-white rounded-xl transition-all duration-300 cursor-pointer"
+                className="group relative bg-white rounded-lg transition-all duration-300 cursor-pointer overflow-hidden h-full"
                 style={{ 
                   transform: 'translateY(0)',
                   border: theme.components.landingCard.border,
-                  boxShadow: theme.components.landingCard.shadow
+                  boxShadow: theme.components.landingCard.shadow,
+                  borderLeft: `4px solid ${theme.colors.primary.main}`
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)'
+                  e.currentTarget.style.transform = 'translateY(-3px)'
+                  e.currentTarget.style.boxShadow = '0 12px 28px -8px rgba(0, 0, 0, 0.15), 0 8px 16px -8px rgba(0, 0, 0, 0.1)'
+                  e.currentTarget.style.borderLeftColor = theme.colors.primary.dark || theme.colors.primary.main
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = theme.components.landingCard.shadow
+                  e.currentTarget.style.borderLeftColor = theme.colors.primary.main
                 }}
               >
-                <div className="p-10">
-                  <div className="flex flex-col items-start">
-                    <div className="p-4 rounded-xl mb-6" style={{ backgroundColor: theme.colors.primary.light }}>
-                      <FileText className="w-10 h-10" style={{ color: theme.colors.primary.main }} />
+                {/* Subtle gradient overlay on hover */}
+                <div 
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                  style={{ 
+                    background: `linear-gradient(135deg, ${theme.colors.primary.light}15 0%, transparent 50%)` 
+                  }}
+                />
+                <div className="p-6 h-full relative">
+                  <div className="flex items-start gap-4 h-full">
+                    <div 
+                      className="p-3 rounded-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-110" 
+                      style={{ backgroundColor: theme.colors.primary.light }}
+                    >
+                      <FileText className="w-6 h-6" style={{ color: theme.colors.primary.main }} />
                     </div>
-                    <h3 className="text-2xl font-bold mb-3" style={combineStyles(
-                      { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
-                    )}>
-                      Configuration report
-                    </h3>
-                    <p className="mb-6 leading-relaxed" style={combineStyles(
-                      { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
-                    )}>
-                      Upload a single Entities.xml configuration file. Generate a comprehensive list of the configurations it contains, such as firewall rules, hosts and services, and network modules.
-                      <span><br />
-                        </span>
-                        <span><br />
-                        </span>
-                    </p>
-                    <div className="flex items-center text-sm font-semibold" style={{
-                      color: theme.components.landingCard.linkColor,
-                      fontFamily: theme.typography.fontFamily.primary
-                    }}>
-                      <span>Get Started</span>
-                      <svg className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                    <div className="flex-1 min-w-0 flex flex-col h-full">
+                      <h3 className="text-lg font-semibold mb-2" style={combineStyles(
+                        { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
+                      )}>
+                        Configuration report
+                      </h3>
+                      <p className="text-sm leading-relaxed flex-grow" style={combineStyles(
+                        { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
+                      )}>
+                        Upload a single Entities.xml configuration file. Generate a comprehensive list of the configurations it contains, such as firewall rules, hosts and services, and network modules.
+                      </p>
+                      <div className="flex items-center text-sm font-medium mt-4 group-hover:translate-x-1 transition-transform duration-200" style={{
+                        color: theme.components.landingCard.linkColor,
+                        fontFamily: theme.typography.fontFamily.primary
+                      }}>
+                        <span>Get Started</span>
+                        <svg className="w-4 h-4 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -548,46 +561,59 @@ function App() {
               {/* Generate Diff View Option */}
               <div
                 onClick={() => setMode('diff')}
-                className="group relative bg-white rounded-xl transition-all duration-300 cursor-pointer"
+                className="group relative bg-white rounded-lg transition-all duration-300 cursor-pointer overflow-hidden h-full"
                 style={{ 
                   transform: 'translateY(0)',
                   border: theme.components.landingCard.border,
-                  boxShadow: theme.components.landingCard.shadow
+                  boxShadow: theme.components.landingCard.shadow,
+                  borderLeft: `4px solid ${theme.colors.secondary.main}`
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.transform = 'translateY(-4px)'
+                  e.currentTarget.style.transform = 'translateY(-3px)'
+                  e.currentTarget.style.boxShadow = '0 12px 28px -8px rgba(0, 0, 0, 0.15), 0 8px 16px -8px rgba(0, 0, 0, 0.1)'
+                  e.currentTarget.style.borderLeftColor = theme.colors.secondary.dark || theme.colors.secondary.main
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'translateY(0)'
+                  e.currentTarget.style.boxShadow = theme.components.landingCard.shadow
+                  e.currentTarget.style.borderLeftColor = theme.colors.secondary.main
                 }}
               >
-                <div className="p-10">
-                  <div className="flex flex-col items-start">
-                    <div className="p-4 rounded-xl mb-6" style={{ backgroundColor: theme.colors.secondary.light }}>
-                      <GitCompare className="w-10 h-10" style={{ color: theme.colors.secondary.main }} />
+                {/* Subtle gradient overlay on hover */}
+                <div 
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                  style={{ 
+                    background: `linear-gradient(135deg, ${theme.colors.secondary.light}15 0%, transparent 50%)` 
+                  }}
+                />
+                <div className="p-6 h-full relative">
+                  <div className="flex items-start gap-4 h-full">
+                    <div 
+                      className="p-3 rounded-lg flex-shrink-0 transition-transform duration-300 group-hover:scale-110" 
+                      style={{ backgroundColor: theme.colors.secondary.light }}
+                    >
+                      <GitCompare className="w-6 h-6" style={{ color: theme.colors.secondary.main }} />
                     </div>
-                    <h3 className="text-2xl font-bold mb-3" style={combineStyles(
-                      { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
-                    )}>
-                      Compare configurations
-                    </h3>
-                    <p className="mb-6 leading-relaxed" style={combineStyles(
-                      { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
-                    )}>
-                       Upload the Entities.xml files of two configurations.
-
-                      Generate a comparative report of the configurations they contain, such as firewall rules, hosts and services, and network modules. 
-                      The generated format highlights the differences. 
-
-                    </p>
-                    <div className="flex items-center text-sm font-semibold" style={{
-                      color: theme.components.landingCard.linkColor,
-                      fontFamily: theme.typography.fontFamily.primary
-                    }}>
-                      <span>Get Started</span>
-                      <svg className="w-5 h-5 ml-2 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
+                    <div className="flex-1 min-w-0 flex flex-col h-full">
+                      <h3 className="text-lg font-semibold mb-2" style={combineStyles(
+                        { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
+                      )}>
+                        Compare configurations
+                      </h3>
+                      <p className="text-sm leading-relaxed flex-grow" style={combineStyles(
+                        { color: 'colors.text.secondary', fontFamily: 'typography.fontFamily.primary' }
+                      )}>
+                        Upload the Entities.xml files of two configurations. Generate a comparative report of the configurations they contain, such as firewall rules, hosts and services, and network modules. The generated format highlights the differences.
+                      </p>
+                      <div className="flex items-center text-sm font-medium mt-4 group-hover:translate-x-1 transition-transform duration-200" style={{
+                        color: theme.components.landingCard.linkColor,
+                        fontFamily: theme.typography.fontFamily.primary
+                      }}>
+                        <span>Get Started</span>
+                        <svg className="w-4 h-4 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -600,7 +626,7 @@ function App() {
                 <h2 className="text-3xl font-bold mb-3" style={combineStyles(
                   { color: 'colors.text.heading', fontFamily: 'typography.fontFamily.primary' }
                 )}>
-                  About This Tool
+                  About this tool
                 </h2>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -854,3 +880,4 @@ function App() {
 }
 
 export default App
+

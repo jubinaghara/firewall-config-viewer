@@ -92,7 +92,7 @@ export default function UploadZone({ onFileUpload, loading, error, onHomeClick }
               or click to select the file.
             </p>
             <p className="text-gray-500 m-4">
-              The file is in the API-xxx folder that’s downloaded when you export a configuration from <span class="font-bold">Backup and firmware &gt; Import-export</span>.
+              The file is in the API-xxx folder that’s downloaded when you export a configuration from <span className="font-bold">Backup and firmware &gt; Import-export</span>.
             </p>
   
           </div>
