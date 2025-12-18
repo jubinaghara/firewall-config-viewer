@@ -701,25 +701,20 @@ function App() {
                   }}
                   disabled={configTreeLoading}
                   className="px-4 py-2 text-sm font-medium rounded transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={combineStyles(
-                    {
-                      color: theme.components.button.secondary.text,
-                      backgroundColor: theme.components.button.secondary.bg,
-                      fontFamily: theme.typography.fontFamily.primary,
-                      border: `1px solid ${theme.colors.border.medium}`,
-                      boxShadow: theme.shadows.sm,
-                    }
-                  )}
+                  style={{
+                    color: theme.colors.primary.main,
+                    backgroundColor: 'transparent',
+                    fontFamily: theme.typography.fontFamily.primary,
+                    border: `1px solid ${theme.colors.primary.main}`,
+                  }}
                   onMouseEnter={(e) => {
                     if (!configTreeLoading) {
-                      e.target.style.backgroundColor = theme.components.button.secondary.hover
-                      e.target.style.color = theme.components.button.secondary.text
+                      e.target.style.backgroundColor = theme.colors.primary.light
                     }
                   }}
                   onMouseLeave={(e) => {
                     if (!configTreeLoading) {
-                      e.target.style.backgroundColor = theme.components.button.secondary.bg
-                      e.target.style.color = theme.components.button.secondary.text
+                      e.target.style.backgroundColor = 'transparent'
                     }
                   }}
                 >

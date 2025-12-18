@@ -1031,7 +1031,7 @@ function generateSingletonEntityCardHTML(item, icon, title) {
     `
   }
   
-  const renderGroup = (group, path = '', level = 0) => {
+  const renderGroup = (group, path = '', level = 0, isTopLevel = false) => {
     let html = ''
     const directValues = []
     const childGroups = []
@@ -1048,25 +1048,37 @@ function generateSingletonEntityCardHTML(item, icon, title) {
       }
     })
     
-    // Render direct values
+    // Render direct values - use two columns at top level
     if (directValues.length > 0) {
+      if (isTopLevel) {
+        html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0 1.5rem;">'
+      }
       directValues.forEach(({ key, value, isBoolean }) => {
         html += renderFieldRow(key, value, isBoolean)
       })
+      if (isTopLevel) {
+        html += '</div>'
+      }
     }
     
-    // Render child groups (always expanded in HTML export)
+    // Render child groups (always expanded in HTML export) - use two columns at top level
     if (childGroups.length > 0) {
+      if (isTopLevel) {
+        html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.5rem;">'
+      }
       childGroups.forEach(({ key, children }) => {
-        html += `<div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; margin-top: 0.5rem;">`
+        html += `<div style="border: 1px solid #e5e7eb; border-radius: 0.5rem; overflow: hidden; ${!isTopLevel ? 'margin-top: 0.5rem;' : ''}">`
         html += `<div style="padding: 0.625rem; background-color: #f9fafb; border-bottom: 1px solid #e5e7eb;">`
         html += `<span style="font-size: 0.75rem; font-weight: 600; color: #111827;">${escapeHtml(key)}</span>`
         html += '</div>'
         html += `<div style="padding: 0.75rem; background-color: #ffffff;">`
-        html += renderGroup(children, path ? `${path}.${key}` : key, level + 1)
+        html += renderGroup(children, path ? `${path}.${key}` : key, level + 1, false)
         html += '</div>'
         html += '</div>'
       })
+      if (isTopLevel) {
+        html += '</div>'
+      }
     }
     
     return html
@@ -1104,7 +1116,7 @@ function generateSingletonEntityCardHTML(item, icon, title) {
     `
   }
   
-  // Render with nested structure
+  // Render with nested structure - use two-column layout for top level
   return `
     <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1); overflow: hidden; margin-bottom: 1.5rem;">
       <div style="background-color: #f9fafb; padding: 0.75rem 1rem; border-bottom: 1px solid #e5e7eb;">
@@ -1114,7 +1126,7 @@ function generateSingletonEntityCardHTML(item, icon, title) {
         </div>
       </div>
       <div style="padding: 1rem;">
-        ${renderGroup(grouped)}
+        ${renderGroup(grouped, '', 0, true)}
       </div>
     </div>
   `
@@ -6142,7 +6154,20 @@ function generateAdminSettingsTable(items) {
     return '<span style="padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; background-color: #d1fae5; color: #065f46;">' + (value === 'Enable' || value === '1' || value === 1 ? 'Enable' : escapeHtml(value)) + '</span>'
   }
 
-  // Helper to render setting group HTML
+  // Helper to render a single setting row (key-value pair)
+  const renderSettingRowHTML = (label, value, isBoolean = false) => {
+    const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
+    return `
+      <div style="display: grid; grid-template-columns: 200px 1fr; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid #f3f4f6;">
+        <span style="font-size: 0.75rem; color: #4b5563; font-weight: 500; word-break: break-word;">${escapeHtml(label)}</span>
+        <div style="font-size: 0.75rem; color: #111827;">
+          ${isBoolean ? renderSettingBadgeHTML(displayValue) : `<span style="font-family: monospace;">${escapeHtml(displayValue)}</span>`}
+        </div>
+      </div>
+    `
+  }
+
+  // Helper to render setting group HTML - cleaner two-column layout
   const renderSettingGroupHTML = (groupName, groupData, isNested = false) => {
     if (!groupData || typeof groupData !== 'object') return ''
     
@@ -6152,107 +6177,89 @@ function generateAdminSettingsTable(items) {
     
     if (entries.length === 0) return ''
 
-    const itemsHTML = entries.map(([key, value]) => {
-      // Handle nested objects
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        return `
-          <div style="grid-column: 1 / -1; margin-top: 0.5rem;">
-            ${renderSettingGroupHTML(key.replace(/([A-Z])/g, ' $1').trim(), value, true)}
-          </div>
-        `
-      }
-      
-      const label = key.replace(/([A-Z])/g, ' $1').trim()
-      const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
-      const isBoolean = displayValue === 'Enable' || displayValue === 'Disable' || displayValue === '1' || displayValue === '0'
-      
-      return `
-        <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background-color: #f9fafb; border-radius: 0.25rem;">
-          <span style="font-size: 0.75rem; color: #374151; font-weight: 500; flex: 1; margin-right: 0.5rem; word-break: break-word; overflow-wrap: anywhere;">${escapeHtml(label)}</span>
-          <div style="flex-shrink: 0;">
-            ${isBoolean ? renderSettingBadgeHTML(displayValue) : `<span style="font-size: 0.75rem; color: #111827; font-family: monospace;">${escapeHtml(displayValue)}</span>`}
-          </div>
-        </div>
-      `
-    }).join('')
+    // Separate nested objects from simple values
+    const simpleEntries = entries.filter(([, value]) => !(value && typeof value === 'object' && !Array.isArray(value)))
+    const nestedEntries = entries.filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
 
-    return `
-      <div style="margin-bottom: ${isNested ? '0.5rem' : '1rem'}; ${isNested ? 'margin-left: 1rem;' : ''}">
-        <h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e5e7eb;">
+    let html = `
+      <div style="${isNested ? 'margin-top: 0.75rem;' : ''}">
+        <h4 style="font-size: 0.75rem; font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #d1d5db;">
           ${escapeHtml(groupName)}
         </h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;">
-          ${itemsHTML}
-        </div>
-      </div>
     `
+    
+    // Render simple values
+    if (simpleEntries.length > 0) {
+      html += '<div style="margin-bottom: 0.75rem;">'
+      simpleEntries.forEach(([key, value]) => {
+        const label = key.replace(/([A-Z])/g, ' $1').trim()
+        const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
+        const isBoolean = displayValue === 'Enable' || displayValue === 'Disable' || displayValue === '1' || displayValue === '0'
+        html += renderSettingRowHTML(label, displayValue, isBoolean)
+      })
+      html += '</div>'
+    }
+    
+    // Render nested objects
+    if (nestedEntries.length > 0) {
+      nestedEntries.forEach(([key, value]) => {
+        html += renderSettingGroupHTML(key.replace(/([A-Z])/g, ' $1').trim(), value, true)
+      })
+    }
+    
+    html += '</div>'
+    return html
   }
 
   const settingsHTML = items.map((item, idx) => {
     const fields = item.fields || {}
-    let content = ''
     
-    // Hostname Settings
+    // Build left and right column content
+    let leftColumn = ''
+    let rightColumn = ''
+    
+    // Left column
     if (fields.HostnameSettings) {
-      content += renderSettingGroupHTML('Hostname Settings', fields.HostnameSettings)
+      leftColumn += renderSettingGroupHTML('Hostname Settings', fields.HostnameSettings)
     }
-    
-    // Web Admin Settings
-    if (fields.WebAdminSettings) {
-      content += renderSettingGroupHTML('Web Admin Settings', fields.WebAdminSettings)
-    }
-    
-    // Login Security
     if (fields.LoginSecurity) {
-      content += renderSettingGroupHTML('Login Security', fields.LoginSecurity)
+      leftColumn += renderSettingGroupHTML('Login Security', fields.LoginSecurity)
     }
-    
-    // Password Complexity Settings
-    if (fields.PasswordComplexitySettings) {
-      content += renderSettingGroupHTML('Password Complexity Settings', fields.PasswordComplexitySettings)
-    }
-    
-    // Login Disclaimer
     if (fields.LoginDisclaimer) {
-      content += `
-        <div style="margin-bottom: 1rem;">
-          <h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e5e7eb;">
+      leftColumn += `
+        <div>
+          <h4 style="font-size: 0.75rem; font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #d1d5db;">
             Login Disclaimer
           </h4>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;">
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background-color: #f9fafb; border-radius: 0.25rem;">
-              <span style="font-size: 0.75rem; color: #374151; font-weight: 500; flex: 1; margin-right: 0.5rem;">Status</span>
-              <div style="flex-shrink: 0;">
-                ${renderSettingBadgeHTML(fields.LoginDisclaimer)}
-              </div>
-            </div>
-          </div>
+          ${renderSettingRowHTML('Status', fields.LoginDisclaimer, true)}
         </div>
       `
     }
     
-    // Default Configuration Language
+    // Right column
+    if (fields.WebAdminSettings) {
+      rightColumn += renderSettingGroupHTML('Web Admin Settings', fields.WebAdminSettings)
+    }
+    if (fields.PasswordComplexitySettings) {
+      rightColumn += renderSettingGroupHTML('Password Complexity Settings', fields.PasswordComplexitySettings)
+    }
     if (fields.DefaultConfigurationLanguage) {
-      content += `
-        <div style="margin-bottom: 1rem;">
-          <h4 style="font-size: 0.75rem; font-weight: 600; color: #374151; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #e5e7eb;">
+      rightColumn += `
+        <div>
+          <h4 style="font-size: 0.75rem; font-weight: 600; color: #1f2937; margin-bottom: 0.5rem; padding-bottom: 0.25rem; border-bottom: 1px solid #d1d5db;">
             Default Configuration Language
           </h4>
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;">
-            <div style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem; background-color: #f9fafb; border-radius: 0.25rem;">
-              <span style="font-size: 0.75rem; color: #374151; font-weight: 500; flex: 1; margin-right: 0.5rem;">Language</span>
-              <div style="flex-shrink: 0;">
-                <span style="font-size: 0.75rem; color: #111827; font-weight: 500;">${escapeHtml(fields.DefaultConfigurationLanguage)}</span>
-              </div>
-            </div>
-          </div>
+          ${renderSettingRowHTML('Language', fields.DefaultConfigurationLanguage, false)}
         </div>
       `
     }
     
     return `
-      <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
-        ${content}
+      <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;">
+          <div style="display: flex; flex-direction: column; gap: 1rem;">${leftColumn}</div>
+          <div style="display: flex; flex-direction: column; gap: 1rem;">${rightColumn}</div>
+        </div>
       </div>
     `
   }).join('')
@@ -6264,7 +6271,7 @@ function generateAdminSettingsTable(items) {
         <span>Admin Settings</span>
         <span style="color: #6b7280; font-weight: normal;">(${items.length})</span>
       </h3>
-      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
         ${settingsHTML}
       </div>
     </div>

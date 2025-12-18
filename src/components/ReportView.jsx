@@ -1092,7 +1092,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       )
     }
 
-    const renderGroup = (group, path = '', level = 0) => {
+    const renderGroup = (group, path = '', level = 0, isTopLevel = false) => {
       const directValues = []
       const childGroups = []
       
@@ -1110,18 +1110,18 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       
       return (
         <div key={path || 'root'} className={level > 0 ? 'mt-2' : ''}>
-          {/* Render direct values */}
+          {/* Render direct values in two columns at top level */}
           {directValues.length > 0 && (
-            <div className="space-y-0">
+            <div className={isTopLevel ? "grid grid-cols-2 gap-x-6" : "space-y-0"}>
               {directValues.map(({ key, value, isBoolean }) => 
                 renderFieldRow(key, value, isBoolean)
               )}
             </div>
           )}
           
-          {/* Render child groups */}
+          {/* Render child groups - use 2-column grid at top level for better readability */}
           {childGroups.length > 0 && (
-            <div className="space-y-2 mt-2">
+            <div className={`mt-2 ${isTopLevel ? 'grid grid-cols-2 gap-4' : 'space-y-2'}`}>
               {childGroups.map(({ key, children }) => {
                 const groupPath = path ? `${path}.${key}` : key
                 const isGroupExpanded = expandedGroups.has(groupPath)
@@ -1143,7 +1143,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
                     </button>
                     {isGroupExpanded && (
                       <div className="p-3 bg-white border-t border-gray-200">
-                        {renderGroup(children, groupPath, level + 1)}
+                        {renderGroup(children, groupPath, level + 1, false)}
                       </div>
                     )}
                   </div>
@@ -1186,7 +1186,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       )
     }
 
-    // Render with nested structure
+    // Render with nested structure - use two-column layout for top level
     return (
       <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
         <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
@@ -1196,7 +1196,7 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
           </div>
         </div>
         <div className="p-4">
-          {renderGroup(grouped)}
+          {renderGroup(grouped, '', 0, true)}
         </div>
       </div>
     )
@@ -8240,8 +8240,6 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
 
   const AdminSettingsTable = ({ items }) => {
     if (!items || items.length === 0) return null
-
-    const { columnFilters, setColumnFilters, getSearchableText } = useTableFilters(items)
     
     // Helper to render setting badge
     const renderSettingBadge = (value) => {
@@ -8259,7 +8257,24 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       )
     }
 
-    // Helper to render setting group
+    // Helper to render a single setting row (key-value pair)
+    const renderSettingRow = (label, value, isBoolean = false) => {
+      const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
+      return (
+        <div className="grid grid-cols-[200px_1fr] gap-4 py-2 border-b border-gray-100 last:border-b-0">
+          <span className="text-xs text-gray-600 font-medium" style={{ wordBreak: 'break-word' }}>
+            {label}
+          </span>
+          <div className="text-xs text-gray-900">
+            {isBoolean ? renderSettingBadge(displayValue) : (
+              <span className="font-mono">{displayValue}</span>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // Helper to render setting group - two column layout for groups
     const renderSettingGroup = (groupName, groupData, isNested = false) => {
       if (!groupData || typeof groupData !== 'object') return null
       
@@ -8269,147 +8284,83 @@ export default function ReportView({ data, filteredRules, sectionVisibility = {}
       
       if (entries.length === 0) return null
 
+      // Separate nested objects from simple values
+      const simpleEntries = entries.filter(([, value]) => !(value && typeof value === 'object' && !Array.isArray(value)))
+      const nestedEntries = entries.filter(([, value]) => value && typeof value === 'object' && !Array.isArray(value))
+
       return (
-        <div className={isNested ? "ml-4 mt-2" : "mb-4"}>
-          <h4 className="text-xs font-semibold text-gray-700 mb-2 pb-1 border-b border-gray-200">
+        <div className={isNested ? "mt-3" : ""}>
+          <h4 className="text-xs font-semibold text-gray-800 mb-2 pb-1 border-b border-gray-300">
             {groupName}
           </h4>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {entries.map(([key, value]) => {
-              // Handle nested objects
-              if (value && typeof value === 'object' && !Array.isArray(value)) {
-                return (
-                  <div key={key} className="col-span-full">
-                    {renderSettingGroup(key.replace(/([A-Z])/g, ' $1').trim(), value, true)}
-                  </div>
-                )
-              }
-              
-              const label = key.replace(/([A-Z])/g, ' $1').trim()
-              const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
-              const isBoolean = displayValue === 'Enable' || displayValue === 'Disable' || displayValue === '1' || displayValue === '0'
-              
-              return (
-                <div key={key} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                  <span className="text-xs text-gray-700 font-medium flex-1 mr-2" style={{ 
-                    wordBreak: 'break-word',
-                    overflowWrap: 'anywhere'
-                  }}>
-                    {label}
-                  </span>
-                  <div className="flex-shrink-0">
-                    {isBoolean ? renderSettingBadge(displayValue) : (
-                      <span className="text-xs text-gray-900 font-mono">{displayValue}</span>
-                    )}
-                  </div>
+          {/* Render simple values */}
+          {simpleEntries.length > 0 && (
+            <div className="mb-3">
+              {simpleEntries.map(([key, value]) => {
+                const label = key.replace(/([A-Z])/g, ' $1').trim()
+                const displayValue = Array.isArray(value) ? value.join(', ') : String(value)
+                const isBoolean = displayValue === 'Enable' || displayValue === 'Disable' || displayValue === '1' || displayValue === '0'
+                return renderSettingRow(label, displayValue, isBoolean)
+              })}
+            </div>
+          )}
+          {/* Render nested objects */}
+          {nestedEntries.length > 0 && (
+            <div className="space-y-3">
+              {nestedEntries.map(([key, value]) => (
+                <div key={key}>
+                  {renderSettingGroup(key.replace(/([A-Z])/g, ' $1').trim(), value, true)}
                 </div>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )
     }
-
-    const getAdminSettingsText = (fields) => {
-      const parts = []
-      const extractSettings = (obj, prefix = '') => {
-        if (!obj || typeof obj !== 'object') return
-        Object.entries(obj).forEach(([key, value]) => {
-          if (key && value !== undefined && value !== null && value !== '') {
-            const fullKey = prefix ? `${prefix}.${key}` : key
-            if (value && typeof value === 'object' && !Array.isArray(value)) {
-              extractSettings(value, fullKey)
-            } else {
-              parts.push(fullKey.replace(/([A-Z])/g, ' $1').trim(), Array.isArray(value) ? value.join(', ') : String(value))
-            }
-          }
-        })
-      }
-      if (fields.HostnameSettings) extractSettings(fields.HostnameSettings, 'HostnameSettings')
-      if (fields.WebAdminSettings) extractSettings(fields.WebAdminSettings, 'WebAdminSettings')
-      if (fields.LoginSecurity) extractSettings(fields.LoginSecurity, 'LoginSecurity')
-      if (fields.PasswordComplexitySettings) extractSettings(fields.PasswordComplexitySettings, 'PasswordComplexitySettings')
-      if (fields.LoginDisclaimer) parts.push('LoginDisclaimer', fields.LoginDisclaimer)
-      if (fields.DefaultConfigurationLanguage) parts.push('DefaultConfigurationLanguage', fields.DefaultConfigurationLanguage)
-      return parts.join(' ')
-    }
-    
-    const filteredItems = items.filter((item) => {
-      const fields = item.fields || {}
-      const allText = getAdminSettingsText(fields)
-      const searchText = getSearchableText(allText).toLowerCase()
-      const filterValue = columnFilters.search
-      if (!filterValue || !filterValue.trim()) return true
-      return searchText.includes(filterValue.toLowerCase().trim())
-    })
 
     return (
       <div className="mb-6">
         <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2 border-b border-gray-200 pb-1.5">
           <Icon name="settings" className="text-gray-600 text-base" />
           <span>Admin Settings</span>
-          <span className="text-gray-500 font-normal">
-            ({filteredItems.length}{filteredItems.length !== items.length ? `/${items.length}` : ''})
-          </span>
+          <span className="text-gray-500 font-normal">({items.length})</span>
         </h3>
-        <div className="mb-2">
-          <FilterInput
-            value={columnFilters.search}
-            onChange={(e) => setColumnFilters(prev => ({ ...prev, search: e.target.value }))}
-            placeholder="Search all settings..."
-            ariaLabel="Search Admin Settings"
-          />
-        </div>
-        <div className="space-y-6">
-          {filteredItems.map((it, idx) => {
+        <div className="space-y-4">
+          {items.map((it, idx) => {
             const fields = it.fields || {}
             
             return (
               <div key={`admin-settings-${it.transactionId}-${idx}`} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-                {/* Hostname Settings */}
-                {fields.HostnameSettings && renderSettingGroup('Hostname Settings', fields.HostnameSettings)}
-                
-                {/* Web Admin Settings */}
-                {fields.WebAdminSettings && renderSettingGroup('Web Admin Settings', fields.WebAdminSettings)}
-                
-                {/* Login Security */}
-                {fields.LoginSecurity && renderSettingGroup('Login Security', fields.LoginSecurity)}
-                
-                {/* Password Complexity Settings */}
-                {fields.PasswordComplexitySettings && renderSettingGroup('Password Complexity Settings', fields.PasswordComplexitySettings)}
-                
-                {/* Other top-level settings */}
-                {fields.LoginDisclaimer && (
-                  <div className="mb-4">
-                    <h4 className="text-xs font-semibold text-gray-700 mb-2 pb-1 border-b border-gray-200">
-                      Login Disclaimer
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span className="text-xs text-gray-700 font-medium flex-1 mr-2">Status</span>
-                        <div className="flex-shrink-0">
-                          {renderSettingBadge(fields.LoginDisclaimer)}
-                        </div>
+                {/* Two column grid for top-level setting groups */}
+                <div className="grid grid-cols-2 gap-6">
+                  {/* Left column */}
+                  <div className="space-y-4">
+                    {fields.HostnameSettings && renderSettingGroup('Hostname Settings', fields.HostnameSettings)}
+                    {fields.LoginSecurity && renderSettingGroup('Login Security', fields.LoginSecurity)}
+                    {fields.LoginDisclaimer && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-800 mb-2 pb-1 border-b border-gray-300">
+                          Login Disclaimer
+                        </h4>
+                        {renderSettingRow('Status', fields.LoginDisclaimer, true)}
                       </div>
-                    </div>
+                    )}
                   </div>
-                )}
-                
-                {fields.DefaultConfigurationLanguage && (
-                  <div className="mb-4">
-                    <h4 className="text-xs font-semibold text-gray-700 mb-2 pb-1 border-b border-gray-200">
-                      Default Configuration Language
-                    </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                      <div className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                        <span className="text-xs text-gray-700 font-medium flex-1 mr-2">Language</span>
-                        <div className="flex-shrink-0">
-                          <span className="text-xs text-gray-900 font-medium">{fields.DefaultConfigurationLanguage}</span>
-                        </div>
+                  
+                  {/* Right column */}
+                  <div className="space-y-4">
+                    {fields.WebAdminSettings && renderSettingGroup('Web Admin Settings', fields.WebAdminSettings)}
+                    {fields.PasswordComplexitySettings && renderSettingGroup('Password Complexity Settings', fields.PasswordComplexitySettings)}
+                    {fields.DefaultConfigurationLanguage && (
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-800 mb-2 pb-1 border-b border-gray-300">
+                          Default Configuration Language
+                        </h4>
+                        {renderSettingRow('Language', fields.DefaultConfigurationLanguage, false)}
                       </div>
-                    </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             )
           })}
